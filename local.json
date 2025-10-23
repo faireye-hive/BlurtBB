@@ -1,0 +1,9 @@
+{
+  "authors": {
+    "some-spammer": { "reason": "local ban for spam" },
+    "diosbot": { "reason": "test ban" }
+  },
+  "posts": [
+    "blurt-user/this-is-a-test-post-to-hide"
+  ]
+}
