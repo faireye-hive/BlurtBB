@@ -198,15 +198,17 @@ async function handleEditSubmit(e, originalPost, draftKey) {
 
     try {
         const key = auth.getPostingKey();
-        const metadata = JSON.parse(originalPost.json_metadata);
-        await blockchain.broadcastEdit(originalPost.author, key, originalPost.permlink, title, body, metadata);
+        const originalLastUpdate = originalPost.last_update;
+
+        await blockchain.broadcastEdit(originalPost.author, key, originalPost, title, body);
 
         if (draftKey) {
             localStorage.removeItem(draftKey);
         }
 
         appContainer.innerHTML = `<div class="text-center mt-5"><h4>Changes submitted!</h4><p>Waiting for confirmation...</p><div class="spinner-border"></div></div>`;
-        pollForPost(originalPost.author, originalPost.permlink);
+        
+        pollForEdit(originalPost.author, originalPost.permlink, originalLastUpdate);
 
     } catch (error) {
         errorDiv.textContent = `Error: ${error.message}`;
@@ -311,6 +313,29 @@ function pollForPost(author, permlink) {
             Toastify({ text: "Post was submitted, but it is taking a long time to appear. You will be redirected to the home page.", duration: 5000, backgroundColor: "orange" }).showToast();
             history.pushState({}, '', '/');
             handleRouteChange();
+        }
+    }, interval);
+}
+
+function pollForEdit(author, permlink, originalLastUpdate) {
+    let attempts = 0;
+    const maxAttempts = 15;
+    const interval = 2000;
+
+    const poller = setInterval(async () => {
+        attempts++;
+        console.log(`Polling for edit... Attempt ${attempts}`);
+        const data = await blockchain.getPostAndReplies(author, permlink);
+        
+        // Check if the post exists and its last_update timestamp has changed
+        if (data && data.post && data.post.last_update !== originalLastUpdate) {
+            clearInterval(poller);
+            Toastify({ text: "Edit confirmed!", backgroundColor: "green" }).showToast();
+            // Go back to the previous page, which will trigger a re-render
+            history.back();
+        } else if (attempts >= maxAttempts) {
+            clearInterval(poller);
+            Toastify({ text: "Edit was submitted, but it is taking a long time to confirm. You may need to refresh manually.", duration: 5000, backgroundColor: "orange" }).showToast();
         }
     }, interval);
 }
@@ -907,5 +932,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     window.addEventListener('popstate', handleRouteChange);
+
+    // Listen for pageshow event to handle back-forward cache
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            // Page was restored from bfcache, content might be stale.
+            console.log("Page restored from bfcache. Forcing route change.");
+            handleRouteChange();
+        }
+    });
+
     handleRouteChange();
 });

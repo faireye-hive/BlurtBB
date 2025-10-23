@@ -67,6 +67,23 @@ export async function getPostAndReplies(author, permlink) {
 }
 
 /**
+ * Fetches the last reply for a given post.
+ * @param {string} author 
+ * @param {string} permlink 
+ * @returns {Promise<Object|null>} The last reply object or null if none.
+ */
+export async function getLastReply(author, permlink) {
+    return new Promise((resolve) => {
+        blurt.api.getContentReplies(author, permlink, (err, replies) => {
+            if (err || !replies || replies.length === 0) {
+                return resolve(null);
+            }
+            resolve(replies[replies.length - 1]);
+        });
+    });
+}
+
+/**
  * Broadcasts a new post to the blockchain.
  * @returns {Promise<Object>} An object containing the final permlink.
  */
@@ -135,10 +152,28 @@ export async function broadcastReply(author, key, parentAuthor, parentPermlink, 
 /**
  * Broadcasts an edit of an existing post or reply.
  */
-export async function broadcastEdit(author, key, permlink, title, body, metadata) {
-    const jsonMetadata = JSON.stringify(metadata);
+export async function broadcastEdit(author, key, originalPost, title, body) {
+    const metadata = JSON.parse(originalPost.json_metadata);
+    
+    // Robustly determine parent_permlink
+    // For top-level posts, it's the first tag. For replies, it's the parent_permlink property.
+    const parentPermlink = (metadata.tags && metadata.tags.length > 0) ? metadata.tags[0] : originalPost.parent_permlink;
+    
+    const parentAuthor = originalPost.parent_author || '';
+    const jsonMetadata = JSON.stringify(metadata); // We pass the original metadata back
+
+    const operation = ['comment', {
+        parent_author: parentAuthor,
+        parent_permlink: parentPermlink,
+        author: author,
+        permlink: originalPost.permlink,
+        title: title,
+        body: body,
+        json_metadata: jsonMetadata
+    }];
+
     return new Promise((resolve, reject) => {
-        blurt.broadcast.comment(key, metadata.parent_author || '', metadata.parent_permlink, author, permlink, title, body, jsonMetadata, (err, result) => {
+        blurt.broadcast.send({ operations: [operation], extensions: [] }, { posting: key }, (err, result) => {
             if (err) return reject(err);
             resolve(result);
         });
@@ -194,21 +229,4 @@ async function generatePermlink(author, title) {
         // An error likely means the permlink doesn't exist, which is good.
         return permlink;
     }
-}
-
-/**
- * Fetches the last reply for a given post.
- * @param {string} author 
- * @param {string} permlink 
- * @returns {Promise<Object|null>} The last reply object or null if none.
- */
-export async function getLastReply(author, permlink) {
-    return new Promise((resolve) => {
-        blurt.api.getContentReplies(author, permlink, (err, replies) => {
-            if (err || !replies || replies.length === 0) {
-                return resolve(null);
-            }
-            resolve(replies[replies.length - 1]);
-        });
-    });
 }
