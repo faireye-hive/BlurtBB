@@ -54,12 +54,53 @@ export async function getTopics(categoryId, startAuthor = null, startPermlink = 
  * @param {string} permlink 
  * @returns {Promise<Object>}
  */
-export async function getPostAndReplies(author, permlink) {
+export async function getPostWithReplies(author, permlink) {
+    // 1. Fetch the root post
+    const post = await new Promise((resolve, reject) => {
+        blurt.api.getContent(author, permlink, (err, result) => err ? reject(err) : resolve(result));
+    });
+
+    if (!post || post.author === '') {
+        throw new Error('Post not found');
+    }
+
+    // 2. Create a recursive function to fetch all descendants
+    const fetchRepliesRecursive = async (parentAuthor, parentPermlink) => {
+        const replies = await new Promise((resolve, reject) => {
+            blurt.api.getContentReplies(parentAuthor, parentPermlink, (err, result) => err ? reject(err) : resolve(result));
+        });
+
+        // For each reply, recursively fetch its own replies
+        const repliesWithChildren = await Promise.all(
+            replies.map(async (reply) => {
+                const children = await fetchRepliesRecursive(reply.author, reply.permlink);
+                reply.replies = children; // Attach the fetched children
+                return reply;
+            })
+        );
+
+        return repliesWithChildren;
+    };
+
+    // 3. Start the recursive fetch from the root post
+    post.replies = await fetchRepliesRecursive(author, permlink);
+    return post;
+}
+
+/**
+ * Fetches a single post and its direct replies (non-recursive).
+ * Used for lightweight polling.
+ * @param {string} author 
+ * @param {string} permlink 
+ * @returns {Promise<Object>}
+ */
+export async function getPostAndDirectReplies(author, permlink) {
     return new Promise((resolve, reject) => {
         blurt.api.getContent(author, permlink, (err, post) => {
             if (err) return reject(err);
             blurt.api.getContentReplies(author, permlink, (err, replies) => {
                 if (err) return reject(err);
+                // The poller expects an object with 'post' and 'replies' properties.
                 resolve({ post, replies });
             });
         });

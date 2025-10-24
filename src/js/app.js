@@ -152,7 +152,7 @@ async function handleReplySubmit(e, parentAuthor, parentPermlink) {
     try {
         const author = auth.getCurrentUser();
         const key = auth.getPostingKey();
-        const originalReplyCount = (await blockchain.getPostAndReplies(parentAuthor, parentPermlink)).replies.length;
+        const originalReplyCount = (await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink)).replies.length;
 
         await blockchain.broadcastReply(author, key, parentAuthor, parentPermlink, body);
 
@@ -162,7 +162,7 @@ async function handleReplySubmit(e, parentAuthor, parentPermlink) {
         const maxAttempts = 15;
         const poller = setInterval(async () => {
             attempts++;
-            const data = await blockchain.getPostAndReplies(parentAuthor, parentPermlink);
+            const data = await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink);
             if (data && data.replies.length > originalReplyCount) {
                 clearInterval(poller);
                 handleRouteChange();
@@ -493,18 +493,34 @@ async function renderPostView(author, permlink) {
         return;
     }
 
-    const data = await blockchain.getPostAndReplies(author, permlink);
+    const post = await blockchain.getPostWithReplies(author, permlink);
 
-    if (!data || !data.post || data.post.author === '') {
+    if (!post || post.author === '') {
         renderNotFound();
         return;
     }
 
-    let { post, replies } = data;
-    replies = replies.filter(reply => !blacklist.isBlacklisted(reply.author, reply.permlink));
     document.title = `${post.title} - ${CONFIG.forum_title}`;
     const user = auth.getCurrentUser();
     const postAuthorAvatarUrl = blockchain.getAvatarUrl(post.author);
+
+    // --- Flatten the reply tree and create a lookup map ---
+    const allReplies = [];
+    const contentMap = { [`@${post.author}/${post.permlink}`]: post };
+
+    function flattenAndMap(replies) {
+        if (!replies) return;
+        replies.forEach(reply => {
+            if (blacklist.isBlacklisted(reply.author, reply.permlink)) return;
+            allReplies.push(reply);
+            contentMap[`@${reply.author}/${reply.permlink}`] = reply;
+            flattenAndMap(reply.replies);
+        });
+    }
+    flattenAndMap(post.replies);
+
+    // Sort the flat list of replies chronologically
+    allReplies.sort((a, b) => new Date(a.created) - new Date(b.created));
 
     let html = `
         <div class="card mb-3">
@@ -530,7 +546,8 @@ async function renderPostView(author, permlink) {
                                 <!-- Vote button and Pending Payout rendered here by poller -->
                             </div>
                             <div>
-                                ${auth.getCurrentUser() === post.author ? `
+                                ${user ? `<button class="btn btn-sm btn-outline-primary me-2 reply-to-btn" data-author="${post.author}" data-permlink="${post.permlink}">Reply</button>` : ''}
+                                ${user === post.author ? `
                                     <a href="?edit=@${post.author}/${post.permlink}" class="btn btn-sm btn-outline-secondary me-2">Edit</a>
                                     <button id="delete-post-btn" class="btn btn-sm btn-outline-danger">Delete Post</button>
                                 ` : ''}
@@ -540,81 +557,85 @@ async function renderPostView(author, permlink) {
                 </div>
             </div>
         </div>
+        <div id="reply-form-container"></div>
         <h3>Replies</h3>`;
 
-    if (replies.length > 0) {
+    if (allReplies.length > 0) {
         html += '<div class="list-group">'
-        replies.forEach(reply => {
+        allReplies.forEach(reply => {
             const replyAvatarUrl = blockchain.getAvatarUrl(reply.author);
+
+            let quoteHtml = '';
+            const parentKey = `@${reply.parent_author}/${reply.parent_permlink}`;
+            const parent = contentMap[parentKey];
+            if (parent) {
+                const parentBody = parent.body.substring(0, 100) + (parent.body.length > 100 ? '...' : '');
+                quoteHtml = `
+                    <blockquote class="blockquote-footer bg-light p-2 rounded-top">
+                        <a href="#${parentKey}">@${reply.parent_author}</a> wrote:
+                        <p class="mb-0 fst-italic">${parentBody}</p>
+                    </blockquote>
+                `;
+            }
+
             html += `
-                <div class="list-group-item">
+                <div id="@${reply.author}/${reply.permlink}" class="list-group-item mt-3">
                     <div class="row">
-                        <!-- Left Column: Author Info -->
                         <div class="col-md-3 text-center border-end">
                             <a href="?profile=${reply.author}">
                                 <img src="${replyAvatarUrl}" alt="${reply.author}" class="rounded-circle mb-2" width="40" height="40">
                                 <h6 class="mb-0">@${reply.author}</h6>
                             </a>
                             ${getRoleBadge(reply.author)}
-                            <small class="text-muted d-block mt-2">Replied: ${new Date(reply.created).toLocaleString()}</small>
+                            <small class="text-muted d-block mt-2">${new Date(reply.created).toLocaleString()}</small>
                         </div>
-
-                        <!-- Right Column: Reply Content and Actions -->
                         <div class="col-md-9">
+                            ${quoteHtml}
                             <div class="mb-2">${DOMPurify.sanitize(marked.parse(reply.body), { ALLOWED_TAGS: ['p', 'strong', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'blockquote', 'code', 'pre', 'br', 'hr'], ALLOWED_ATTR: ['href', 'src', 'alt', 'title'] })}</div>
                             <div class="d-flex align-items-center justify-content-between mt-2">
                                 <div class="d-flex align-items-center vote-section" data-author="${reply.author}" data-permlink="${reply.permlink}">
                                     <!-- Vote section will be dynamically rendered here -->
                                 </div>
                                 <div>
-                                    ${auth.getCurrentUser() === reply.author ? `
-                                        <a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary me-2">Edit</a>
+                                    ${user ? `<button class="btn btn-sm btn-link text-secondary reply-to-btn" data-author="${reply.author}" data-permlink="${reply.permlink}">Reply</button>` : ''}
+                                    ${user === reply.author ? `
+                                        <a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary">Edit</a>
                                         <button class="btn btn-sm btn-link text-danger delete-reply-btn" data-permlink="${reply.permlink}">Delete</button>
                                     ` : ''}
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>`;
+                </div>
+                <div id="reply-form-container-for-${reply.permlink}"></div>
+            `;
         });
-        html += '</div>'
+        html += '</div>';
     } else {
         html += '<p>No replies yet.</p>';
-    }
-
-    if (auth.getCurrentUser()) {
-        html += `
-            <hr class="my-4">
-            <h4>Leave a Reply</h4>
-            <form id="reply-form">
-                <div class="mb-3">
-                    <textarea class="form-control" id="reply-body" rows="5" required></textarea>
-                </div>
-                <div id="reply-error" class="alert alert-danger d-none"></div>
-                <button type="submit" class="btn btn-primary">Submit Reply</button>
-            </form>`;
     }
 
     appContainer.innerHTML = html;
 
     // --- Attach all event listeners ---
-    if (auth.getCurrentUser()) {
-        const replyForm = document.getElementById('reply-form');
-        if(replyForm) {
-            replyForm.addEventListener('submit', (e) => handleReplySubmit(e, post.author, post.permlink));
-        }
+    if (user) {
         const deletePostBtn = document.getElementById('delete-post-btn');
         if (deletePostBtn) {
             deletePostBtn.addEventListener('click', (e) => handleDeleteClick(e, post.author, post.permlink));
         }
         document.querySelectorAll('.delete-reply-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => handleDeleteClick(e, auth.getCurrentUser(), e.target.dataset.permlink));
+            btn.addEventListener('click', (e) => handleDeleteClick(e, user, e.target.dataset.permlink));
         });
-        // We use event delegation for the vote buttons
+
         appContainer.addEventListener('click', function(e) {
             const voteBtn = e.target.closest('.vote-btn');
             if (voteBtn) {
                 handleVoteClick(voteBtn);
+            }
+            const replyBtn = e.target.closest('.reply-to-btn');
+            if (replyBtn) {
+                const { author, permlink } = replyBtn.dataset;
+                renderReplyForm(author, permlink);
             }
         });
     }
@@ -624,11 +645,46 @@ async function renderPostView(author, permlink) {
     hideLoader();
 }
 
+function renderReplyForm(parentAuthor, parentPermlink) {
+    // Remove any existing reply form
+    const existingForm = document.getElementById('reply-form');
+    if (existingForm) {
+        existingForm.parentElement.innerHTML = '';
+    }
+
+    const formHtml = `
+        <form id="reply-form" class="mt-3 mb-3 card card-body">
+            <h4>Reply to @${parentAuthor}</h4>
+            <div class="mb-3">
+                <textarea class="form-control" id="reply-body" rows="5" required></textarea>
+            </div>
+            <div id="reply-error" class="alert alert-danger d-none"></div>
+            <button type="submit" class="btn btn-primary">Submit Reply</button>
+            <button type="button" class="btn btn-secondary mt-2" id="cancel-reply">Cancel</button>
+        </form>
+    `;
+
+    // Determine where to place the form
+    let containerId = `reply-form-container-for-${parentPermlink}`;
+    let container = document.getElementById(containerId);
+    if (!container) {
+        // If it's a reply to the main post, the container is different
+        container = document.getElementById('reply-form-container');
+    }
+    container.innerHTML = formHtml;
+
+    document.getElementById('reply-form').addEventListener('submit', (e) => handleReplySubmit(e, parentAuthor, parentPermlink));
+    document.getElementById('cancel-reply').addEventListener('click', () => {
+        container.innerHTML = '';
+    });
+    document.getElementById('reply-body').focus();
+}
+
 function startPostViewPoller(user, author, permlink) {
     if (postViewPoller) clearInterval(postViewPoller);
 
     const renderVotes = async () => {
-        const data = await blockchain.getPostAndReplies(author, permlink);
+        const data = await blockchain.getPostAndDirectReplies(author, permlink);
         if (!data || !data.post) return;
 
         const allContent = [data.post, ...data.replies];
