@@ -504,7 +504,6 @@ async function renderPostView(author, permlink) {
     const user = auth.getCurrentUser();
     const postAuthorAvatarUrl = blockchain.getAvatarUrl(post.author);
 
-    // --- Flatten the reply tree and create a lookup map ---
     const allReplies = [];
     const contentMap = { [`@${post.author}/${post.permlink}`]: post };
 
@@ -519,14 +518,12 @@ async function renderPostView(author, permlink) {
     }
     flattenAndMap(post.replies);
 
-    // Sort the flat list of replies chronologically
     allReplies.sort((a, b) => new Date(a.created) - new Date(b.created));
 
     let html = `
         <div class="card mb-3">
             <div class="card-body">
                 <div class="row">
-                    <!-- Left Column: Author Info -->
                     <div class="col-md-3 text-center border-end">
                         <a href="?profile=${post.author}">
                             <img src="${postAuthorAvatarUrl}" alt="${post.author}" class="rounded-circle mb-2" width="60" height="60">
@@ -535,16 +532,11 @@ async function renderPostView(author, permlink) {
                         ${getRoleBadge(post.author)}
                         <small class="text-muted d-block mt-2">Posted: ${new Date(post.created).toLocaleString()}</small>
                     </div>
-
-                    <!-- Right Column: Post Content and Actions -->
                     <div class="col-md-9">
                         <h1 class="card-title">${post.title}</h1>
                         <div class="card-text fs-5 mb-3">${DOMPurify.sanitize(marked.parse(post.body), { ALLOWED_TAGS: ['p', 'strong', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'blockquote', 'code', 'pre', 'br', 'hr'], ALLOWED_ATTR: ['href', 'src', 'alt', 'title'] })}</div>
-                        
                         <div class="d-flex align-items-center justify-content-between mt-3">
-                            <div class="d-flex align-items-center vote-section" data-author="${post.author}" data-permlink="${post.permlink}">
-                                <!-- Vote button and Pending Payout rendered here by poller -->
-                            </div>
+                            <div class="d-flex align-items-center vote-section" data-author="${post.author}" data-permlink="${post.permlink}"></div>
                             <div>
                                 ${user ? `<button class="btn btn-sm btn-outline-primary me-2 reply-to-btn" data-author="${post.author}" data-permlink="${post.permlink}">Reply</button>` : ''}
                                 ${user === post.author ? `
@@ -553,11 +545,11 @@ async function renderPostView(author, permlink) {
                                 ` : ''}
                             </div>
                         </div>
+                        <div class="reply-form-container mt-3"></div>
                     </div>
                 </div>
             </div>
         </div>
-        <div id="reply-form-container"></div>
         <h3>Replies</h3>`;
 
     if (allReplies.length > 0) {
@@ -579,7 +571,7 @@ async function renderPostView(author, permlink) {
             }
 
             html += `
-                <div id="@${reply.author}/${reply.permlink}" class="list-group-item mt-3">
+                <div id="${parentKey}" class="list-group-item mt-3">
                     <div class="row">
                         <div class="col-md-3 text-center border-end">
                             <a href="?profile=${reply.author}">
@@ -593,9 +585,7 @@ async function renderPostView(author, permlink) {
                             ${quoteHtml}
                             <div class="mb-2">${DOMPurify.sanitize(marked.parse(reply.body), { ALLOWED_TAGS: ['p', 'strong', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'blockquote', 'code', 'pre', 'br', 'hr'], ALLOWED_ATTR: ['href', 'src', 'alt', 'title'] })}</div>
                             <div class="d-flex align-items-center justify-content-between mt-2">
-                                <div class="d-flex align-items-center vote-section" data-author="${reply.author}" data-permlink="${reply.permlink}">
-                                    <!-- Vote section will be dynamically rendered here -->
-                                </div>
+                                <div class="d-flex align-items-center vote-section" data-author="${reply.author}" data-permlink="${reply.permlink}"></div>
                                 <div>
                                     ${user ? `<button class="btn btn-sm btn-link text-secondary reply-to-btn" data-author="${reply.author}" data-permlink="${reply.permlink}">Reply</button>` : ''}
                                     ${user === reply.author ? `
@@ -604,10 +594,10 @@ async function renderPostView(author, permlink) {
                                     ` : ''}
                                 </div>
                             </div>
+                            <div class="reply-form-container mt-3"></div>
                         </div>
                     </div>
                 </div>
-                <div id="reply-form-container-for-${reply.permlink}"></div>
             `;
         });
         html += '</div>';
@@ -617,7 +607,6 @@ async function renderPostView(author, permlink) {
 
     appContainer.innerHTML = html;
 
-    // --- Attach all event listeners ---
     if (user) {
         const deletePostBtn = document.getElementById('delete-post-btn');
         if (deletePostBtn) {
@@ -635,18 +624,18 @@ async function renderPostView(author, permlink) {
             const replyBtn = e.target.closest('.reply-to-btn');
             if (replyBtn) {
                 const { author, permlink } = replyBtn.dataset;
-                renderReplyForm(author, permlink);
+                const formContainer = replyBtn.closest('.col-md-9').querySelector('.reply-form-container');
+                renderReplyForm(author, permlink, formContainer);
             }
         });
     }
 
-    // --- Start live updates ---
     startPostViewPoller(user, author, permlink);
     hideLoader();
 }
 
-function renderReplyForm(parentAuthor, parentPermlink) {
-    // Remove any existing reply form
+function renderReplyForm(parentAuthor, parentPermlink, container) {
+    // Remove any existing reply form first
     const existingForm = document.getElementById('reply-form');
     if (existingForm) {
         existingForm.parentElement.innerHTML = '';
@@ -664,20 +653,16 @@ function renderReplyForm(parentAuthor, parentPermlink) {
         </form>
     `;
 
-    // Determine where to place the form
-    let containerId = `reply-form-container-for-${parentPermlink}`;
-    let container = document.getElementById(containerId);
-    if (!container) {
-        // If it's a reply to the main post, the container is different
-        container = document.getElementById('reply-form-container');
+    if (container) {
+        container.innerHTML = formHtml;
+        document.getElementById('reply-form').addEventListener('submit', (e) => handleReplySubmit(e, parentAuthor, parentPermlink));
+        document.getElementById('cancel-reply').addEventListener('click', () => {
+            container.innerHTML = '';
+        });
+        document.getElementById('reply-body').focus();
+    } else {
+        console.error(`Could not find a container for the reply form to ${parentPermlink}`);
     }
-    container.innerHTML = formHtml;
-
-    document.getElementById('reply-form').addEventListener('submit', (e) => handleReplySubmit(e, parentAuthor, parentPermlink));
-    document.getElementById('cancel-reply').addEventListener('click', () => {
-        container.innerHTML = '';
-    });
-    document.getElementById('reply-body').focus();
 }
 
 function startPostViewPoller(user, author, permlink) {

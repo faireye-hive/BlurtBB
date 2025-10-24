@@ -162,7 +162,9 @@ export async function broadcastPost(author, key, categoryId, title, body) {
  * Broadcasts a reply to an existing post.
  */
 export async function broadcastReply(author, key, parentAuthor, parentPermlink, body) {
-    const permlink = await generatePermlink(author, `re-${parentAuthor}-${parentPermlink}`);
+    // Create a guaranteed unique permlink for the reply
+    const timestamp = new Date().getTime();
+    const permlink = `re-${parentPermlink}-${timestamp}`;
     const jsonMetadata = JSON.stringify({ tags: [parentPermlink], app: 'blurtbb/0.1' });
 
     const operations = [
