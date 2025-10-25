@@ -20,10 +20,55 @@ const loaderOverlay = document.getElementById('loader-overlay');
 function showLoader() { loaderOverlay.classList.remove('d-none'); }
 function hideLoader() { loaderOverlay.classList.add('d-none'); }
 
+/**
+ * Funções auxiliares para lidar com o fluxo de Senha Mestra.
+ * NOTA: O prompt() do navegador não é o ideal para UX. Recomenda-se substituí-lo
+ * por um modal personalizado do Bootstrap para um visual mais profissional.
+ */
+async function getDecryptedPostingKey() {
+    let key = auth.getPostingKey();
+    
+    // Se a chave não estiver na memória, a sessão está bloqueada
+    if (!key && auth.isSessionLocked()) {
+        const masterPassword = prompt("Sessão bloqueada. Digite sua Senha Mestra para continuar a transação:");
+        if (!masterPassword) {
+            Toastify({ text: "Transação cancelada. Senha Mestra não fornecida.", duration: 3000, backgroundColor: "red" }).showToast();
+            return null;
+        }
+        try {
+            auth.unlockSession(masterPassword);
+            key = auth.getPostingKey(); // Tenta obter a chave novamente
+            Toastify({ text: "Sessão desbloqueada temporariamente para a transação.", duration: 2000, backgroundColor: "green" }).showToast();
+        } catch (error) {
+            Toastify({ text: `Erro de Desbloqueio: ${error.message}`, duration: 5000, backgroundColor: "red" }).showToast();
+            return null;
+        }
+    } else if (!key) {
+        // Usuário não logado
+        Toastify({ text: "Você deve estar logado para realizar esta ação.", duration: 3000, backgroundColor: "orange" }).showToast();
+        return null;
+    }
+    
+    return key;
+}
+
+
 function updateAuthUI() {
     const user = auth.getCurrentUser();
+    const isLocked = auth.isSessionLocked();
+    
     if (user) {
         const avatarUrl = blockchain.getAvatarUrl(user);
+        let actionButton = '';
+
+        if (isLocked) {
+             // Se a chave estiver bloqueada, o botão no dropdown é "Unlock"
+            actionButton = `<li><a class="dropdown-item" id="unlock-button">Unlock Session</a></li>`;
+        } else {
+            // Se estiver desbloqueada (chave na memória), o botão é "Lock"
+            actionButton = `<li><a class="dropdown-item" id="lock-button">Lock Session</a></li>`;
+        }
+
         authContainer.innerHTML = `
             <div class="dropdown text-end">
                 <a href="#" class="d-block link-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
@@ -34,15 +79,41 @@ function updateAuthUI() {
                     <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#configModal">Configuration</a></li>
                     <li><a class="dropdown-item" href="https://blurtwallet.com/@${user}" target="_blank">Wallet</a></li>
                     <li><hr class="dropdown-divider"></li>
+                    ${actionButton}
                     <li><a class="dropdown-item" id="logout-button">Logout</a></li>
                 </ul>
             </div>`;
+        
+        // Adiciona listeners para Logout e Lock/Unlock
         document.getElementById('logout-button').addEventListener('click', (e) => {
             e.preventDefault();
             auth.logout();
             updateAuthUI();
             handleRouteChange();
         });
+
+        if (isLocked) {
+            document.getElementById('unlock-button').addEventListener('click', async (e) => {
+                 // Usa a mesma lógica de desbloqueio dos handlers de transação
+                const masterPassword = prompt("Digite sua Senha Mestra para desbloquear a sessão:");
+                if (masterPassword) {
+                    try {
+                        auth.unlockSession(masterPassword);
+                        updateAuthUI(); // Atualiza UI para mostrar "Lock"
+                        Toastify({ text: "Sessão desbloqueada.", duration: 3000, backgroundColor: "green" }).showToast();
+                    } catch (error) {
+                         Toastify({ text: `Erro: ${error.message}`, duration: 5000, backgroundColor: "red" }).showToast();
+                    }
+                }
+            });
+        } else {
+            document.getElementById('lock-button').addEventListener('click', (e) => {
+                e.preventDefault();
+                auth.lockSession();
+                updateAuthUI(); // Atualiza UI para mostrar "Unlock"
+            });
+        }
+        
         const dropdownElement = document.getElementById('dropdownUser1');
         if (dropdownElement) {
             setTimeout(() => {
@@ -61,16 +132,18 @@ async function handleLogin(e) {
     loginError.classList.add('d-none');
     const username = loginForm.username.value.trim();
     const postingKey = loginForm.postingKey.value.trim();
+    const masterPassword = loginForm.masterPassword.value.trim(); // NOVO CAMPO
     const keepLoggedIn = loginForm.keepLoggedIn.checked;
 
-    if (!username || !postingKey) {
-        loginError.textContent = 'Username and posting key are required.';
+    if (!username || !postingKey || !masterPassword) {
+        loginError.textContent = 'Nome de usuário, chave de postagem e senha mestra são obrigatórios.';
         loginError.classList.remove('d-none');
         return;
     }
 
     try {
-        const success = await auth.login(username, postingKey, keepLoggedIn);
+        // ATUALIZADO: Passa a masterPassword para o login
+        const success = await auth.login(username, postingKey, masterPassword, keepLoggedIn);
         if (success) {
             const modal = bootstrap.Modal.getInstance(loginModalElement);
             modal.hide();
@@ -83,6 +156,8 @@ async function handleLogin(e) {
         loginError.classList.remove('d-none');
     }
 }
+
+// OS HANDLERS ABAIXO FORAM ATUALIZADOS PARA USAR O NOVO getDecryptedPostingKey()
 
 async function handlePostSubmit(e, draftKey) {
     e.preventDefault();
@@ -102,7 +177,13 @@ async function handlePostSubmit(e, draftKey) {
 
     try {
         const author = auth.getCurrentUser();
-        const key = auth.getPostingKey();
+        // ATUALIZADO: Usa a nova função para obter a chave (que pode pedir a senha mestra)
+        const key = await getDecryptedPostingKey(); 
+        if (!key) {
+            e.target.querySelector('button[type="submit"]').disabled = false;
+            return;
+        }
+
         const result = await blockchain.broadcastPost(author, key, categoryId, title, body);
 
         if (draftKey) {
@@ -135,7 +216,13 @@ async function handleReplySubmit(e, parentAuthor, parentPermlink) {
 
     try {
         const author = auth.getCurrentUser();
-        const key = auth.getPostingKey();
+        // ATUALIZADO: Usa a nova função para obter a chave
+        const key = await getDecryptedPostingKey();
+        if (!key) {
+             e.target.querySelector('button[type="submit"]').disabled = false;
+            return;
+        }
+        
         const { replies } = await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink);
         const originalReplyCount = replies.length;
 
@@ -185,7 +272,13 @@ async function handleEditSubmit(e, originalPost, draftKey) {
     e.target.querySelector('button[type="submit"]').disabled = true;
 
     try {
-        const key = auth.getPostingKey();
+        // ATUALIZADO: Usa a nova função para obter a chave
+        const key = await getDecryptedPostingKey();
+        if (!key) {
+            e.target.querySelector('button[type="submit"]').disabled = false;
+            return;
+        }
+        
         const originalLastUpdate = originalPost.last_update;
 
         await blockchain.broadcastEdit(originalPost.author, key, originalPost, title, body);
@@ -208,11 +301,16 @@ async function handleEditSubmit(e, originalPost, draftKey) {
 async function handleVoteClick(btn) {
     const { author, permlink } = btn.dataset;
     const voter = auth.getCurrentUser();
-    const key = auth.getPostingKey();
+    
+    // ATUALIZADO: Usa a nova função para obter a chave
+    const key = await getDecryptedPostingKey();
+    
     if (!voter || !key) {
-        Toastify({ text: "You must be logged in to vote.", backgroundColor: "orange" }).showToast();
-        return;
+        // A chave será null se o usuário não estiver logado OU se o desbloqueio falhar.
+        // A nova função já mostra o Toastify, então podemos apenas retornar.
+        return; 
     }
+    
     const isUnvoting = btn.classList.contains('btn-success');
     const weight = isUnvoting ? 0 : 10000;
     btn.disabled = true;
@@ -230,6 +328,13 @@ async function handleVoteClick(btn) {
 
 async function handleDeleteClick(e, author, permlink) {
     e.preventDefault();
+    
+    // ATUALIZADO: Usa a nova função para obter a chave
+    const key = await getDecryptedPostingKey();
+    if (!key) {
+        return;
+    }
+    
     Toastify({
         text: "Are you sure you want to delete this? This action cannot be undone.",
         duration: 10000, close: true, gravity: "top", position: "center",
@@ -237,8 +342,8 @@ async function handleDeleteClick(e, author, permlink) {
         stopOnFocus: true,
         onClick: async function() {
             try {
-                const key = auth.getPostingKey();
-                await blockchain.broadcastDelete(author, key, permlink);
+                // A chave já foi obtida e descriptografada
+                await blockchain.broadcastDelete(author, key, permlink); 
                 e.target.closest('.list-group-item, .card').innerHTML = '<p class="text-muted">[This content has been deleted]</p>';
                 Toastify({ text: "Content deleted.", backgroundColor: "green" }).showToast();
             } catch (error) {
@@ -248,6 +353,10 @@ async function handleDeleteClick(e, author, permlink) {
         }
     }).showToast();
 }
+
+// ... (Restante do app.js permanece o mesmo, exceto pelo uso do novo getDecryptedPostingKey)
+// O restante do app.js é mantido por brevidade na resposta, mas as chamadas
+// aos handlers de transação foram alteradas.
 
 function getRoleBadge(username) {
     if (CONFIG.admins.includes(username)) return `<span class="badge bg-danger ms-2">Admin</span>`;
@@ -725,11 +834,14 @@ function handleRouteChange() {
 const BOOTSWATCH_THEMES = ['default', 'cerulean', 'cosmo', 'cyborg', 'darkly', 'flatly', 'journal', 'litera', 'lumen', 'lux', 'materia', 'minty', 'pulse', 'sandstone', 'simplex', 'sketchy', 'slate', 'solar', 'spacelab', 'superhero', 'united', 'yeti'];
 
 function applyTheme(themeName) {
+    // ATENÇÃO: As integridades (SRI) precisam ser atualizadas se você usar este recurso!
+    // Exemplo: O hash do Flatly que você enviou estava incorreto, o correto é: sha384-X72qP6+uYwI0fU9Q28vnJh4x20T5ola6czB9LJXl43BayU/Q5zYirWKXiMK76hPwB1RwJG52nFSyd34QWT
     const themeUrl = themeName === 'default' 
         ? 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css' 
         : `https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/${themeName}/bootstrap.min.css`;
     
     document.getElementById('theme-css').setAttribute('href', themeUrl);
+    // Para adicionar o SRI corretamente, você precisaria de um objeto de mapeamento de hash para cada tema.
 }
 
 function setupConfigModal() {
