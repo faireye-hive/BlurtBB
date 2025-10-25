@@ -24,3 +24,14 @@ body {
 .dropdown-item#logout-button {
     cursor: pointer;
 }
+.main-post-text,
+.main-post-text img,
+.main-post-text video,
+.main-post-text iframe{
+    overflow: hidden;
+    word-break: break-word;
+    max-width: 100%;
+    height: auto;
+    overflow-wrap: break-word;
+}
+
