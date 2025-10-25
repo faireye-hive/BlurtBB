@@ -39,7 +39,6 @@ export function getBeneficiaryOps(author, permlink) {
         author: author,
         permlink: permlink,
         max_accepted_payout: '1000000.000 BLURT',
-        percent_blurt_dollars: 10000, // 100% SBD
         allow_votes: true,
         allow_curation_rewards: true,
         extensions: [

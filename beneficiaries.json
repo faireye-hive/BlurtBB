@@ -1,6 +1,8 @@
-[
-  {
-    "account": "fervi",
-    "weight": 1000
-  }
-]
+{
+  "beneficiaries": [
+    {
+      "account": "fervi",
+      "weight": 1000
+    }
+  ]
+}
