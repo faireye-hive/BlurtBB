@@ -12,15 +12,13 @@ const loginModalElement = document.getElementById('loginModal');
 const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
 
-let postViewPoller = null; // To hold the setInterval for dynamic updates
-let currentRenderVotes = null; // To hold a reference to the current post's vote render function
+let easyMDEInstance = null;
+let postViewPoller = null;
+let currentRenderVotes = null;
 
-// --- LOADER LOGIC ---
 const loaderOverlay = document.getElementById('loader-overlay');
 function showLoader() { loaderOverlay.classList.remove('d-none'); }
 function hideLoader() { loaderOverlay.classList.add('d-none'); }
-
-// --- AUTHENTICATION LOGIC ---
 
 function updateAuthUI() {
     const user = auth.getCurrentUser();
@@ -45,23 +43,16 @@ function updateAuthUI() {
             updateAuthUI();
             handleRouteChange();
         });
-
         const dropdownElement = document.getElementById('dropdownUser1');
         if (dropdownElement) {
             setTimeout(() => {
                 if (window.bootstrap && window.bootstrap.Dropdown) {
                     new window.bootstrap.Dropdown(dropdownElement);
-                } else {
-                    console.warn("Bootstrap Dropdown could not be initialized after timeout.");
                 }
             }, 100);
         }
-
     } else {
-        authContainer.innerHTML = `
-            <button type="button" class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#loginModal">
-                Login
-            </button>`;
+        authContainer.innerHTML = `<button type="button" class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#loginModal">Login</button>`;
     }
 }
 
@@ -93,12 +84,10 @@ async function handleLogin(e) {
     }
 }
 
-// --- FORM SUBMISSION HANDLERS ---
-
 async function handlePostSubmit(e, draftKey) {
     e.preventDefault();
     const title = document.getElementById('topic-title').value;
-    const body = document.getElementById('topic-body').value;
+    const body = easyMDEInstance.value();
     const errorDiv = document.getElementById('post-error');
     const categoryId = new URLSearchParams(window.location.search).get('new_topic_in');
 
@@ -118,16 +107,11 @@ async function handlePostSubmit(e, draftKey) {
 
         if (draftKey) {
             localStorage.removeItem(draftKey);
+            localStorage.removeItem(`${draftKey}-title`);
         }
 
-        appContainer.innerHTML = `
-            <div class="text-center mt-5">
-                <h4>Post submitted successfully!</h4>
-                <p>Waiting for it to be confirmed on the blockchain...</p>
-                <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
-            </div>`;
+        appContainer.innerHTML = `<div class="text-center mt-5"><h4>Post submitted successfully!</h4><p>Waiting for it to be confirmed on the blockchain...</p><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>`;
         pollForPost(author, result.finalPermlink);
-
     } catch (error) {
         errorDiv.textContent = `Error: ${error.message}`;
         errorDiv.classList.remove('d-none');
@@ -137,7 +121,7 @@ async function handlePostSubmit(e, draftKey) {
 
 async function handleReplySubmit(e, parentAuthor, parentPermlink) {
     e.preventDefault();
-    const body = document.getElementById('reply-body').value;
+    const body = easyMDEInstance.value();
     const errorDiv = document.getElementById('reply-error');
 
     if (!body.trim()) {
@@ -152,11 +136,17 @@ async function handleReplySubmit(e, parentAuthor, parentPermlink) {
     try {
         const author = auth.getCurrentUser();
         const key = auth.getPostingKey();
-        const originalReplyCount = (await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink)).replies.length;
+        const { replies } = await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink);
+        const originalReplyCount = replies.length;
 
         await blockchain.broadcastReply(author, key, parentAuthor, parentPermlink, body);
 
-        e.target.querySelector('button[type="submit"]').innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Posting...';
+        if (easyMDEInstance) {
+            easyMDEInstance.toTextArea();
+            easyMDEInstance = null;
+        }
+
+        e.target.closest('#reply-form').innerHTML = '<p class="text-success">Reply submitted! Waiting for confirmation...</p>';
 
         let attempts = 0;
         const maxAttempts = 15;
@@ -168,9 +158,7 @@ async function handleReplySubmit(e, parentAuthor, parentPermlink) {
                 handleRouteChange();
             } else if (attempts >= maxAttempts) {
                 clearInterval(poller);
-                Toastify({ text: "Reply was submitted, but it is taking a long time to appear.", duration: 5000, backgroundColor: "orange" }).showToast();
-                e.target.querySelector('button[type="submit"]').disabled = false;
-                e.target.querySelector('button[type="submit"]').innerHTML = 'Submit Reply';
+                Toastify({ text: "Reply was submitted, but it's taking a long time to appear.", duration: 5000, backgroundColor: "orange" }).showToast();
             }
         }, 2000);
 
@@ -185,7 +173,7 @@ async function handleEditSubmit(e, originalPost, draftKey) {
     e.preventDefault();
     const titleInput = document.getElementById('edit-title');
     const title = titleInput ? titleInput.value : originalPost.title;
-    const body = document.getElementById('edit-body').value;
+    const body = easyMDEInstance.value();
     const errorDiv = document.getElementById('edit-error');
 
     if (!body.trim() || (originalPost.title && !title.trim())) {
@@ -204,10 +192,10 @@ async function handleEditSubmit(e, originalPost, draftKey) {
 
         if (draftKey) {
             localStorage.removeItem(draftKey);
+            localStorage.removeItem(`${draftKey}-title`);
         }
 
         appContainer.innerHTML = `<div class="text-center mt-5"><h4>Changes submitted!</h4><p>Waiting for confirmation...</p><div class="spinner-border"></div></div>`;
-        
         pollForEdit(originalPost.author, originalPost.permlink, originalLastUpdate);
 
     } catch (error) {
@@ -221,47 +209,30 @@ async function handleVoteClick(btn) {
     const { author, permlink } = btn.dataset;
     const voter = auth.getCurrentUser();
     const key = auth.getPostingKey();
-
     if (!voter || !key) {
         Toastify({ text: "You must be logged in to vote.", backgroundColor: "orange" }).showToast();
         return;
     }
-
     const isUnvoting = btn.classList.contains('btn-success');
     const weight = isUnvoting ? 0 : 10000;
-    const actionText = isUnvoting ? 'Removing vote...' : 'Submitting vote...';
-
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> ${actionText}`;
-
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span>`;
     try {
         await blockchain.broadcastVote(voter, key, author, permlink, weight);
         Toastify({ text: "Vote submitted successfully!", backgroundColor: "green" }).showToast();
-        
-        // Immediately refresh the vote section instead of just toggling the button
-        if (currentRenderVotes) {
-            await currentRenderVotes();
-        }
-
+        if (currentRenderVotes) await currentRenderVotes();
     } catch (error) {
         console.error("Vote failed:", error);
         Toastify({ text: `Vote failed: ${error.message}`, backgroundColor: "red" }).showToast();
-        // Restore button on failure
-        if (currentRenderVotes) {
-            await currentRenderVotes(); // Also refresh on failure to restore the correct state
-        }
+        if (currentRenderVotes) await currentRenderVotes();
     }
 }
 
 async function handleDeleteClick(e, author, permlink) {
     e.preventDefault();
-    
     Toastify({
         text: "Are you sure you want to delete this? This action cannot be undone.",
-        duration: 10000,
-        close: true,
-        gravity: "top",
-        position: "center",
+        duration: 10000, close: true, gravity: "top", position: "center",
         backgroundColor: "linear-gradient(to right, #ff6e40, #ffc107)",
         stopOnFocus: true,
         onClick: async function() {
@@ -278,15 +249,9 @@ async function handleDeleteClick(e, author, permlink) {
     }).showToast();
 }
 
-// --- HELPER FUNCTIONS ---
-
 function getRoleBadge(username) {
-    if (CONFIG.admins.includes(username)) {
-        return `<span class="badge bg-danger ms-2">Admin</span>`;
-    }
-    if (CONFIG.moderators.includes(username)) {
-        return `<span class="badge bg-success ms-2">Moderator</span>`;
-    }
+    if (CONFIG.admins.includes(username)) return `<span class="badge bg-danger ms-2">Admin</span>`;
+    if (CONFIG.moderators.includes(username)) return `<span class="badge bg-success ms-2">Moderator</span>`;
     return '';
 }
 
@@ -296,21 +261,17 @@ function getAllCategories() {
 
 function pollForPost(author, permlink) {
     let attempts = 0;
-    const maxAttempts = 15;
-    const interval = 2000;
-
+    const maxAttempts = 15, interval = 2000;
     const poller = setInterval(async () => {
         attempts++;
-        console.log(`Polling for post... Attempt ${attempts}`);
-        const data = await blockchain.getPostAndReplies(author, permlink);
-        
+        const data = await blockchain.getPostAndDirectReplies(author, permlink);
         if (data && data.post && data.post.author) {
             clearInterval(poller);
             history.pushState({}, '', `?post=@${author}/${permlink}`);
             handleRouteChange();
         } else if (attempts >= maxAttempts) {
             clearInterval(poller);
-            Toastify({ text: "Post was submitted, but it is taking a long time to appear. You will be redirected to the home page.", duration: 5000, backgroundColor: "orange" }).showToast();
+            Toastify({ text: "Post was submitted, but it's taking a long time to appear. You will be redirected.", duration: 5000 }).showToast();
             history.pushState({}, '', '/');
             handleRouteChange();
         }
@@ -319,47 +280,28 @@ function pollForPost(author, permlink) {
 
 function pollForEdit(author, permlink, originalLastUpdate) {
     let attempts = 0;
-    const maxAttempts = 15;
-    const interval = 2000;
-
+    const maxAttempts = 15, interval = 2000;
     const poller = setInterval(async () => {
         attempts++;
-        console.log(`Polling for edit... Attempt ${attempts}`);
-        const data = await blockchain.getPostAndReplies(author, permlink);
-        
-        // Check if the post exists and its last_update timestamp has changed
+        const data = await blockchain.getPostAndDirectReplies(author, permlink);
         if (data && data.post && data.post.last_update !== originalLastUpdate) {
             clearInterval(poller);
             Toastify({ text: "Edit confirmed!", backgroundColor: "green" }).showToast();
-            // Go back to the previous page, which will trigger a re-render
             history.back();
         } else if (attempts >= maxAttempts) {
             clearInterval(poller);
-            Toastify({ text: "Edit was submitted, but it is taking a long time to confirm. You may need to refresh manually.", duration: 5000, backgroundColor: "orange" }).showToast();
+            Toastify({ text: "Edit was submitted, but it's taking a long time to confirm.", duration: 5000, backgroundColor: "orange" }).showToast();
         }
     }, interval);
 }
-
-// --- RENDER FUNCTIONS ---
 
 function renderMainView() {
     document.title = CONFIG.forum_title;
     let html = `<h1>${CONFIG.forum_title}</h1>`;
     CONFIG.category_groups.forEach(group => {
-        html += `
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h4>${group.group_title}</h4>
-                </div>
-                <div class="list-group list-group-flush">`;
+        html += `<div class="card mb-4"><div class="card-header"><h4>${group.group_title}</h4></div><div class="list-group list-group-flush">`;
         group.categories.forEach(cat => {
-            html += `
-                <a href="?category=${cat.id}" class="list-group-item list-group-item-action">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1">${cat.title}</h5>
-                    </div>
-                    <p class="mb-1">${cat.description}</p>
-                </a>`;
+            html += `<a href="?category=${cat.id}" class="list-group-item list-group-item-action"><div class="d-flex w-100 justify-content-between"><h5 class="mb-1">${cat.title}</h5></div><p class="mb-1">${cat.description}</p></a>`;
         });
         html += `</div></div>`;
     });
@@ -373,21 +315,11 @@ async function renderCategoryView(categoryId) {
     const startPermlink = params.get('start_permlink');
 
     const category = getAllCategories().find(c => c.id === categoryId);
-    if (!category) {
-        renderNotFound();
-        return;
-    }
+    if (!category) { renderNotFound(); return; }
 
     document.title = `${category.title} - ${CONFIG.forum_title}`;
     const user = auth.getCurrentUser();
-    let headerHtml = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div>
-                <h2>${category.title}</h2>
-                <p class="mb-0">${category.description}</p>
-            </div>
-            ${user ? `<a href="?new_topic_in=${categoryId}" class="btn btn-primary">New Topic</a>` : ''}
-        </div>`;
+    let headerHtml = `<div class="d-flex justify-content-between align-items-center mb-3"><div><h2>${category.title}</h2><p class="mb-0">${category.description}</p></div>${user ? `<a href="?new_topic_in=${categoryId}" class="btn btn-primary">New Topic</a>` : ''}</div>`;
 
     let topics = await blockchain.getTopics(categoryId, startAuthor, startPermlink);
     topics = topics.filter(topic => !blacklist.isBlacklisted(topic.author, topic.permlink));
@@ -399,106 +331,66 @@ async function renderCategoryView(categoryId) {
             try {
                 const cachedData = JSON.parse(localStorage.getItem(cacheKey));
                 if (cachedData && cachedData.childrenCount === topic.children) {
-                    console.log(`Cache HIT for ${topic.permlink} (children: ${topic.children})`);
                     return { ...topic, lastPostAuthor: cachedData.lastPostAuthor, lastPostDate: cachedData.lastPostDate };
                 }
-            } catch (e) {
-                console.warn(`Could not parse cache for ${cacheKey}`, e);
-            }
-
-            console.log(`Cache MISS for ${topic.permlink} (children: ${topic.children}). Fetching from API.`);
+            } catch (e) {}
             const lastReply = await blockchain.getLastReply(topic.author, topic.permlink);
-            
             const newData = {
                 childrenCount: topic.children,
                 lastPostAuthor: lastReply ? lastReply.author : topic.author,
                 lastPostDate: lastReply ? lastReply.created : topic.created
             };
-            
             localStorage.setItem(cacheKey, JSON.stringify(newData));
-            return { ...topic, lastPostAuthor: newData.lastPostAuthor, lastPostDate: newData.lastPostDate };
+            return { ...topic, ...newData };
         }));
 
-        // Sort the *enriched* data by the accurate last post date
         topicData.sort((a, b) => new Date(b.lastPostDate) - new Date(a.lastPostDate));
 
         topicData.forEach(topic => {
-            const lastPostAuthor = topic.lastPostAuthor;
-            const lastPostDate = topic.lastPostDate;
-            const lastPostAvatarUrl = blockchain.getAvatarUrl(lastPostAuthor);
-            const lastPostHtml = `
-                <div class="d-flex align-items-center" style="min-width: 180px;">
-                    <a href="?profile=${lastPostAuthor}" class="me-2">
-                        <img src="${lastPostAvatarUrl}" class="rounded-circle" width="32" height="32" alt="${lastPostAuthor}">
-                    </a>
-                    <div>
-                        <a href="?profile=${lastPostAuthor}" class="text-break">@${lastPostAuthor}</a>
-                        <br>
-                        <small class="text-muted">
-                            <a href="?post=@${topic.author}/${topic.permlink}" class="text-muted">
-                                <time datetime="${lastPostDate}">${new Date(lastPostDate).toLocaleString()}</time>
-                            </a>
-                        </small>
-                    </div>
-                </div>
-            `;
-
-            topicsHtml += `
-                <li class="list-group-item">
-                    <div class="d-flex w-100 align-items-center">
-                        <!-- Main Info -->
-                        <div class="flex-grow-1">
-                            <h5 class="mb-1">
-                                <a href="?post=@${topic.author}/${topic.permlink}">${topic.title}</a>
-                            </h5>
-                            <small class="text-muted">
-                                By <a href="?profile=${topic.author}">@${topic.author}</a>, ${new Date(topic.created).toLocaleString()}
-                            </small>
-                        </div>
-
-                        <!-- Stats -->
-                        <div class="text-center mx-4" style="min-width: 80px;">
-                            <span class="d-block fs-5">${topic.children}</span>
-                            <small class="text-muted">replies</small>
-                        </div>
-
-                        <!-- Last Post Info -->
-                        ${lastPostHtml}
-                    </div>
-                </li>`;
+            const lastPostAvatarUrl = blockchain.getAvatarUrl(topic.lastPostAuthor);
+            const lastPostHtml = `<div class="d-flex align-items-center" style="min-width: 180px;"><a href="?profile=${topic.lastPostAuthor}" class="me-2"><img src="${lastPostAvatarUrl}" class="rounded-circle" width="32" height="32" alt="${topic.lastPostAuthor}"></a><div><a href="?profile=${topic.lastPostAuthor}" class="text-break">@${topic.lastPostAuthor}</a><br><small class="text-muted"><a href="?post=@${topic.author}/${topic.permlink}" class="text-muted"><time datetime="${topic.lastPostDate}">${new Date(topic.lastPostDate).toLocaleString()}</time></a></small></div></div>`;
+            topicsHtml += `<li class="list-group-item"><div class="d-flex w-100 align-items-center"><div class="flex-grow-1"><h5 class="mb-1"><a href="?post=@${topic.author}/${topic.permlink}">${topic.title}</a></h5><small class="text-muted">By <a href="?profile=${topic.author}">@${topic.author}</a>, ${new Date(topic.created).toLocaleString()}</small></div><div class="text-center mx-4" style="min-width: 80px;"><span class="d-block fs-5">${topic.children}</span><small class="text-muted">replies</small></div>${lastPostHtml}</div></li>`;
         });
     } else {
-        topicsHtml += '<li class="list-group-item">No topics found in this category.</li>';
+        topicsHtml += '<li class="list-group-item">No topics found.</li>';
     }
     topicsHtml += '</ul>';
 
     let paginationHtml = '';
-    if (topics.length === 15) {
+    if (topics.length === CONFIG.topics_per_page) {
         const lastTopic = topics[topics.length - 1];
-        paginationHtml = `
-            <div class="d-flex justify-content-end mt-3">
-                <a href="?category=${categoryId}&start_author=${lastTopic.author}&start_permlink=${lastTopic.permlink}" class="btn btn-outline-primary">Next Page &rarr;</a>
-            </div>`;
+        paginationHtml = `<div class="d-flex justify-content-end mt-3"><a href="?category=${categoryId}&start_author=${lastTopic.author}&start_permlink=${lastTopic.permlink}" class="btn btn-outline-primary">Next Page &rarr;</a></div>`;
     }
 
     appContainer.innerHTML = headerHtml + topicsHtml + paginationHtml;
     hideLoader();
 }
 
+function renderMarkdown(text) {
+    if (!text) return '';
+    // EasyMDE requires the textarea to be in the DOM.
+    const tempTextArea = document.createElement('textarea');
+    tempTextArea.style.display = 'none'; // Make it invisible
+    document.body.appendChild(tempTextArea);
+
+    const tempMDE = new EasyMDE({ element: tempTextArea, autoDownloadFontAwesome: false });
+    const html = tempMDE.markdown(text);
+    
+    // Clean up the instance and the DOM element
+    tempMDE.toTextArea();
+    document.body.removeChild(tempTextArea);
+
+    return html;
+}
+
 async function renderPostView(author, permlink) {
     showLoader();
-    
     if (blacklist.isBlacklisted(author, permlink)) {
-        renderError("This content is unavailable because the author or the post is blacklisted.");
+        renderError("This content is unavailable because the author or post is blacklisted.");
         return;
     }
-
     const post = await blockchain.getPostWithReplies(author, permlink);
-
-    if (!post || post.author === '') {
-        renderNotFound();
-        return;
-    }
+    if (!post || !post.author) { renderNotFound(); return; }
 
     document.title = `${post.title} - ${CONFIG.forum_title}`;
     const user = auth.getCurrentUser();
@@ -506,7 +398,6 @@ async function renderPostView(author, permlink) {
 
     const allReplies = [];
     const contentMap = { [`@${post.author}/${post.permlink}`]: post };
-
     function flattenAndMap(replies) {
         if (!replies) return;
         replies.forEach(reply => {
@@ -517,7 +408,6 @@ async function renderPostView(author, permlink) {
         });
     }
     flattenAndMap(post.replies);
-
     allReplies.sort((a, b) => new Date(a.created) - new Date(b.created));
 
     let html = `
@@ -525,24 +415,18 @@ async function renderPostView(author, permlink) {
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-3 text-center border-end">
-                        <a href="?profile=${post.author}">
-                            <img src="${postAuthorAvatarUrl}" alt="${post.author}" class="rounded-circle mb-2" width="60" height="60">
-                            <h5 class="mb-0">@${post.author}</h5>
-                        </a>
+                        <a href="?profile=${post.author}"><img src="${postAuthorAvatarUrl}" alt="${post.author}" class="rounded-circle mb-2" width="60" height="60"><h5 class="mb-0">@${post.author}</h5></a>
                         ${getRoleBadge(post.author)}
                         <small class="text-muted d-block mt-2">Posted: ${new Date(post.created).toLocaleString()}</small>
                     </div>
                     <div class="col-md-9">
                         <h1 class="card-title">${post.title}</h1>
-                        <div class="card-text fs-5 mb-3">${DOMPurify.sanitize(marked.parse(post.body), { ALLOWED_TAGS: ['p', 'strong', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'blockquote', 'code', 'pre', 'br', 'hr'], ALLOWED_ATTR: ['href', 'src', 'alt', 'title'] })}</div>
+                        <div class="card-text fs-5 mb-3">${renderMarkdown(post.body)}</div>
                         <div class="d-flex align-items-center justify-content-between mt-3">
                             <div class="d-flex align-items-center vote-section" data-author="${post.author}" data-permlink="${post.permlink}"></div>
                             <div>
                                 ${user ? `<button class="btn btn-sm btn-outline-primary me-2 reply-to-btn" data-author="${post.author}" data-permlink="${post.permlink}">Reply</button>` : ''}
-                                ${user === post.author ? `
-                                    <a href="?edit=@${post.author}/${post.permlink}" class="btn btn-sm btn-outline-secondary me-2">Edit</a>
-                                    <button id="delete-post-btn" class="btn btn-sm btn-outline-danger">Delete Post</button>
-                                ` : ''}
+                                ${user === post.author ? `<a href="?edit=@${post.author}/${post.permlink}" class="btn btn-sm btn-outline-secondary me-2">Edit</a><button id="delete-post-btn" class="btn btn-sm btn-outline-danger">Delete</button>` : ''}
                             </div>
                         </div>
                         <div class="reply-form-container mt-3"></div>
@@ -553,52 +437,38 @@ async function renderPostView(author, permlink) {
         <h3>Replies</h3>`;
 
     if (allReplies.length > 0) {
-        html += '<div class="list-group">'
+        html += '<div class="list-group">';
         allReplies.forEach(reply => {
             const replyAvatarUrl = blockchain.getAvatarUrl(reply.author);
-
             let quoteHtml = '';
             const parentKey = `@${reply.parent_author}/${reply.parent_permlink}`;
             const parent = contentMap[parentKey];
             if (parent) {
                 const parentBody = parent.body.substring(0, 100) + (parent.body.length > 100 ? '...' : '');
-                quoteHtml = `
-                    <blockquote class="blockquote-footer bg-light p-2 rounded-top">
-                        <a href="#${parentKey}">@${reply.parent_author}</a> wrote:
-                        <p class="mb-0 fst-italic">${parentBody}</p>
-                    </blockquote>
-                `;
+                quoteHtml = `<blockquote class="blockquote-footer bg-light p-2 rounded-top"><a href="#${parentKey}">@${reply.parent_author}</a> wrote:<p class="mb-0 fst-italic">${parentBody}</p></blockquote>`;
             }
-
             html += `
                 <div id="${parentKey}" class="list-group-item mt-3">
                     <div class="row">
                         <div class="col-md-3 text-center border-end">
-                            <a href="?profile=${reply.author}">
-                                <img src="${replyAvatarUrl}" alt="${reply.author}" class="rounded-circle mb-2" width="40" height="40">
-                                <h6 class="mb-0">@${reply.author}</h6>
-                            </a>
+                            <a href="?profile=${reply.author}"><img src="${replyAvatarUrl}" alt="${reply.author}" class="rounded-circle mb-2" width="40" height="40"><h6 class="mb-0">@${reply.author}</h6></a>
                             ${getRoleBadge(reply.author)}
                             <small class="text-muted d-block mt-2">${new Date(reply.created).toLocaleString()}</small>
                         </div>
                         <div class="col-md-9">
                             ${quoteHtml}
-                            <div class="mb-2">${DOMPurify.sanitize(marked.parse(reply.body), { ALLOWED_TAGS: ['p', 'strong', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'a', 'img', 'blockquote', 'code', 'pre', 'br', 'hr'], ALLOWED_ATTR: ['href', 'src', 'alt', 'title'] })}</div>
+                            <div class="mb-2">${renderMarkdown(reply.body)}</div>
                             <div class="d-flex align-items-center justify-content-between mt-2">
                                 <div class="d-flex align-items-center vote-section" data-author="${reply.author}" data-permlink="${reply.permlink}"></div>
                                 <div>
                                     ${user ? `<button class="btn btn-sm btn-link text-secondary reply-to-btn" data-author="${reply.author}" data-permlink="${reply.permlink}">Reply</button>` : ''}
-                                    ${user === reply.author ? `
-                                        <a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary">Edit</a>
-                                        <button class="btn btn-sm btn-link text-danger delete-reply-btn" data-permlink="${reply.permlink}">Delete</button>
-                                    ` : ''}
+                                    ${user === reply.author ? `<a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary">Edit</a><button class="btn btn-sm btn-link text-danger delete-reply-btn" data-permlink="${reply.permlink}">Delete</button>` : ''}
                                 </div>
                             </div>
                             <div class="reply-form-container mt-3"></div>
                         </div>
                     </div>
-                </div>
-            `;
+                </div>`;
         });
         html += '</div>';
     } else {
@@ -609,18 +479,13 @@ async function renderPostView(author, permlink) {
 
     if (user) {
         const deletePostBtn = document.getElementById('delete-post-btn');
-        if (deletePostBtn) {
-            deletePostBtn.addEventListener('click', (e) => handleDeleteClick(e, post.author, post.permlink));
-        }
+        if (deletePostBtn) deletePostBtn.addEventListener('click', (e) => handleDeleteClick(e, post.author, post.permlink));
         document.querySelectorAll('.delete-reply-btn').forEach(btn => {
             btn.addEventListener('click', (e) => handleDeleteClick(e, user, e.target.dataset.permlink));
         });
-
         appContainer.addEventListener('click', function(e) {
             const voteBtn = e.target.closest('.vote-btn');
-            if (voteBtn) {
-                handleVoteClick(voteBtn);
-            }
+            if (voteBtn) handleVoteClick(voteBtn);
             const replyBtn = e.target.closest('.reply-to-btn');
             if (replyBtn) {
                 const { author, permlink } = replyBtn.dataset;
@@ -635,89 +500,78 @@ async function renderPostView(author, permlink) {
 }
 
 function renderReplyForm(parentAuthor, parentPermlink, container) {
-    // Remove any existing reply form first
-    const existingForm = document.getElementById('reply-form');
-    if (existingForm) {
-        existingForm.parentElement.innerHTML = '';
+    if (easyMDEInstance) {
+        try { easyMDEInstance.toTextArea(); } catch(e) {}
+        easyMDEInstance = null;
     }
+    const existingForm = document.getElementById('reply-form');
+    if (existingForm) existingForm.parentElement.innerHTML = '';
 
     const formHtml = `
         <form id="reply-form" class="mt-3 mb-3 card card-body">
             <h4>Reply to @${parentAuthor}</h4>
-            <div class="mb-3">
-                <textarea class="form-control" id="reply-body" rows="5" required></textarea>
-            </div>
+            <div class="mb-3"><textarea class="form-control" id="reply-body" rows="5"></textarea></div>
             <div id="reply-error" class="alert alert-danger d-none"></div>
             <button type="submit" class="btn btn-primary">Submit Reply</button>
             <button type="button" class="btn btn-secondary mt-2" id="cancel-reply">Cancel</button>
-        </form>
-    `;
-
+        </form>`;
+    
     if (container) {
         container.innerHTML = formHtml;
+        easyMDEInstance = new EasyMDE({
+            element: document.getElementById('reply-body'),
+            spellChecker: false,
+            placeholder: "Enter your reply...",
+        });
         document.getElementById('reply-form').addEventListener('submit', (e) => handleReplySubmit(e, parentAuthor, parentPermlink));
         document.getElementById('cancel-reply').addEventListener('click', () => {
+            if (easyMDEInstance) {
+                try { easyMDEInstance.toTextArea(); } catch(e) {}
+                easyMDEInstance = null;
+            }
             container.innerHTML = '';
         });
-        document.getElementById('reply-body').focus();
+        easyMDEInstance.codemirror.focus();
     } else {
-        console.error(`Could not find a container for the reply form to ${parentPermlink}`);
+        console.error(`Could not find container for reply form to ${parentPermlink}`);
     }
 }
 
 function startPostViewPoller(user, author, permlink) {
     if (postViewPoller) clearInterval(postViewPoller);
-
     const renderVotes = async () => {
         const data = await blockchain.getPostAndDirectReplies(author, permlink);
         if (!data || !data.post) return;
-
         const allContent = [data.post, ...data.replies];
         allContent.forEach(content => {
             if (!content) return;
-
             const voteContainer = document.querySelector(`.vote-section[data-permlink="${content.permlink}"]`);
             if (!voteContainer) return;
-
             const userVoted = user && content.active_votes.some(v => v.voter === user);
             const votersList = content.active_votes.map(v => `@${v.voter}`).join('<br>');
-
             const newHtml = `
-                ${user ? `
-                <button class="btn btn-sm ${userVoted ? 'btn-success' : 'btn-outline-success'} me-2 vote-btn" 
-                    data-author="${content.author}" 
-                    data-permlink="${content.permlink}" >
-                    <i class="fas fa-thumbs-up"></i> <span>${userVoted ? 'Unvote' : 'Upvote'}</span>
-                </button>
-                ` : ''}
+                ${user ? `<button class="btn btn-sm ${userVoted ? 'btn-success' : 'btn-outline-success'} me-2 vote-btn" data-author="${content.author}" data-permlink="${content.permlink}"><i class="fas fa-thumbs-up"></i> <span>${userVoted ? 'Unvote' : 'Upvote'}</span></button>` : ''}
                 <button type="button" class="btn btn-link text-muted text-decoration-none p-0 vote-popover" data-bs-toggle="popover" data-bs-html="true" title="${content.active_votes.length} Voters" data-bs-content="${votersList || 'No votes yet.'}">
                     ${content.title ? `Pending Payout: ${content.pending_payout_value}` : `<small>Payout: ${content.pending_payout_value}</small>`}
-                </button>
-            `;
+                </button>`;
             voteContainer.innerHTML = newHtml;
         });
-
-        // Re-initialize popovers on the new elements
         appContainer.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => new window.bootstrap.Popover(el));
     };
-
     currentRenderVotes = renderVotes;
-
     renderVotes();
     postViewPoller = setInterval(renderVotes, 5000);
 }
 
 function renderNewTopicForm(categoryId) {
-    const category = getAllCategories().find(c => c.id === categoryId);
-    if (!category) {
-        renderNotFound();
-        return;
+    if (easyMDEInstance) {
+        try { easyMDEInstance.toTextArea(); } catch(e) {}
+        easyMDEInstance = null;
     }
 
-    if (!auth.getCurrentUser()) {
-        renderError("You must be logged in to create a new topic.");
-        return;
-    }
+    const category = getAllCategories().find(c => c.id === categoryId);
+    if (!category) { renderNotFound(); return; }
+    if (!auth.getCurrentUser()) { renderError("You must be logged in to create a new topic."); return; }
 
     document.title = `New Topic in ${category.title} - ${CONFIG.forum_title}`;
     const draftKey = `draft-new-${categoryId}`;
@@ -725,15 +579,8 @@ function renderNewTopicForm(categoryId) {
     appContainer.innerHTML = `
         <h2>New Topic in ${category.title}</h2>
         <form id="new-topic-form">
-            <div class="mb-3">
-                <label for="topic-title" class="form-label">Title</label>
-                <input type="text" class="form-control" id="topic-title" required>
-            </div>
-            <div class="mb-3">
-                <label for="topic-body" class="form-label">Content</label>
-                <textarea class="form-control" id="topic-body" rows="10" required></textarea>
-                <div class="form-text">You can use Markdown for formatting. Draft is saved automatically.</div>
-            </div>
+            <div class="mb-3"><label for="topic-title" class="form-label">Title</label><input type="text" class="form-control" id="topic-title"></div>
+            <div class="mb-3"><label for="topic-body" class="form-label">Content</label><textarea class="form-control" id="topic-body" rows="10"></textarea></div>
             <div id="post-error" class="alert alert-danger d-none"></div>
             <button type="submit" class="btn btn-primary">Submit Topic</button>
             <a href="?category=${categoryId}" class="btn btn-secondary">Cancel</a>
@@ -742,31 +589,45 @@ function renderNewTopicForm(categoryId) {
     const titleEl = document.getElementById('topic-title');
     const bodyEl = document.getElementById('topic-body');
 
-    const savedDraft = localStorage.getItem(draftKey);
+    easyMDEInstance = new EasyMDE({
+        element: bodyEl,
+        spellChecker: false,
+        placeholder: "Enter your content here...",
+        autosave: { enabled: true, uniqueId: draftKey, delay: 1000 },
+    });
+
+    const fullDraftKey = `full-draft-${draftKey}`;
+    const savedDraft = localStorage.getItem(fullDraftKey);
     if (savedDraft) {
-        const { title, body } = JSON.parse(savedDraft);
-        titleEl.value = title;
-        bodyEl.value = body;
+        try {
+            const draft = JSON.parse(savedDraft);
+            titleEl.value = draft.title || '';
+            easyMDEInstance.value(draft.body || '');
+        } catch (e) { 
+            easyMDEInstance.value(localStorage.getItem(draftKey) || '');
+        }
     }
 
-    const saveDraft = () => {
-        const draft = { title: titleEl.value, body: bodyEl.value };
-        localStorage.setItem(draftKey, JSON.stringify(draft));
+    const saveFullDraft = () => {
+        const draft = { title: titleEl.value, body: easyMDEInstance.value() };
+        localStorage.setItem(fullDraftKey, JSON.stringify(draft));
     };
-    titleEl.addEventListener('input', saveDraft);
-    bodyEl.addEventListener('input', saveDraft);
+    titleEl.addEventListener('input', saveFullDraft);
+    easyMDEInstance.codemirror.on('change', saveFullDraft);
 
-    document.getElementById('new-topic-form').addEventListener('submit', (e) => handlePostSubmit(e, draftKey));
+    document.getElementById('new-topic-form').addEventListener('submit', (e) => handlePostSubmit(e, fullDraftKey));
 }
 
 async function renderEditView(author, permlink) {
-    appContainer.innerHTML = '<div class="text-center mt-5"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+    if (easyMDEInstance) {
+        try { easyMDEInstance.toTextArea(); } catch(e) {}
+        easyMDEInstance = null;
+    }
+    appContainer.innerHTML = '<div class="text-center mt-5"><div class="spinner-border"></div></div>';
 
-    const content = await blockchain.getPostAndReplies(author, permlink);
-    const post = content.post ? content.post : content;
-
+    const post = await blockchain.getPostWithReplies(author, permlink);
     if (!post || post.author !== auth.getCurrentUser()) {
-        renderError("You do not have permission to edit this post or it does not exist.");
+        renderError("You do not have permission to edit this.");
         return;
     }
 
@@ -776,47 +637,35 @@ async function renderEditView(author, permlink) {
     appContainer.innerHTML = `
         <h2>Editing ${post.title ? 'Topic' : 'Reply'}</h2>
         <form id="edit-form">
-            ${post.title ? `
-            <div class="mb-3">
-                <label for="edit-title" class="form-label">Title</label>
-                <input type="text" class="form-control" id="edit-title" required>
-            </div>` : ''}
-            <div class="mb-3">
-                <label for="edit-body" class="form-label">Content</label>
-                <textarea class="form-control" id="edit-body" rows="10" required></textarea>
-                <div class="form-text">Draft is saved automatically.</div>
-            </div>
+            ${post.title ? `<div class="mb-3"><label for="edit-title" class="form-label">Title</label><input type="text" class="form-control" id="edit-title"></div>` : ''}
+            <div class="mb-3"><label for="edit-body" class="form-label">Content</label><textarea id="edit-body" rows="10"></textarea></div>
             <div id="edit-error" class="alert alert-danger d-none"></div>
             <button type="submit" class="btn btn-primary">Save Changes</button>
             <a href="?post=@${author}/${permlink}" class="btn btn-secondary">Cancel</a>
-        </form>
-    `;
-
+        </form>`;
+    
     const titleEl = document.getElementById('edit-title');
     const bodyEl = document.getElementById('edit-body');
 
-    const savedDraft = localStorage.getItem(draftKey);
-    if (savedDraft) {
-        const { title, body } = JSON.parse(savedDraft);
-        if (titleEl) titleEl.value = title;
-        bodyEl.value = body;
-    } else {
-        if (titleEl) titleEl.value = post.title;
-        bodyEl.value = post.body;
-    }
+    easyMDEInstance = new EasyMDE({
+        element: bodyEl,
+        spellChecker: false,
+        autosave: { enabled: true, uniqueId: draftKey, delay: 1000 }
+    });
 
-    const saveDraft = () => {
-        const draft = { 
-            title: titleEl ? titleEl.value : post.title, 
-            body: bodyEl.value 
-        };
-        localStorage.setItem(draftKey, JSON.stringify(draft));
-    };
-    if (titleEl) titleEl.addEventListener('input', saveDraft);
-    bodyEl.addEventListener('input', saveDraft);
+    const savedDraft = localStorage.getItem(draftKey);
+    easyMDEInstance.value(savedDraft || post.body);
+
+    if (titleEl) {
+        const savedTitleKey = `${draftKey}-title`;
+        const savedTitle = localStorage.getItem(savedTitleKey);
+        titleEl.value = savedTitle || post.title;
+        titleEl.addEventListener('input', () => localStorage.setItem(savedTitleKey, titleEl.value));
+    }
 
     document.getElementById('edit-form').addEventListener('submit', (e) => handleEditSubmit(e, post, draftKey));
 }
+
 
 function renderError(message) {
     appContainer.innerHTML = `<div class="alert alert-danger">${message}</div><a href="/">Back to Home</a>`;
@@ -838,6 +687,11 @@ function handleRouteChange() {
         clearInterval(postViewPoller);
         postViewPoller = null;
         currentRenderVotes = null;
+    }
+
+    if (easyMDEInstance) {
+        try { easyMDEInstance.toTextArea(); } catch(e) {}
+        easyMDEInstance = null;
     }
 
     appContainer.innerHTML = ''; // Clear the page before loading new content
@@ -925,20 +779,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     loginForm.addEventListener('submit', handleLogin);
 
     document.body.addEventListener('click', e => {
-        // If the click is not on a popover trigger or inside a popover, hide all popovers
         if (!e.target.closest('[data-bs-toggle="popover"]') && !e.target.closest('.popover')) {
             document.querySelectorAll('[data-bs-toggle="popover"]').forEach(popoverEl => {
                 const popover = bootstrap.Popover.getInstance(popoverEl);
-                if (popover) {
-                    popover.hide();
-                }
+                if (popover) popover.hide();
             });
         }
 
         const anchor = e.target.closest('a');
         if (!anchor) return;
 
-        // Prevent default for modal triggers OR dropdown triggers
         if (anchor.hasAttribute('data-bs-toggle') && (anchor.getAttribute('data-bs-toggle') === 'modal' || anchor.getAttribute('data-bs-toggle') === 'dropdown')) {
             e.preventDefault();
             return;
@@ -973,15 +823,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     window.addEventListener('popstate', handleRouteChange);
-
-    // Listen for pageshow event to handle back-forward cache
     window.addEventListener('pageshow', function(event) {
         if (event.persisted) {
-            // Page was restored from bfcache, content might be stale.
             console.log("Page restored from bfcache. Forcing route change.");
             handleRouteChange();
         }
     });
-
     handleRouteChange();
 });

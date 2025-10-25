@@ -7,7 +7,7 @@
         default-src 'self'; 
         script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; 
         style-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com 'unsafe-inline'; 
-        img-src 'self' https://images.blurt.blog https://imgp.blurt.world;
+        img-src 'self' https: data:;
         font-src 'self' https://cdnjs.cloudflare.com;
         connect-src 'self' https: wss:;
     ">
@@ -141,11 +141,7 @@
         </div>
     </div>
 
-    <!-- Markdown & Sanitizer Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.3.8/dist/purify.min.js"></script>
-
-    <!-- Toastify JS -->
+        <!-- Toastify JS -->
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 
     <!-- Bootstrap 5 JS -->
