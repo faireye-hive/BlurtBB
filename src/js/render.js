@@ -7,7 +7,7 @@ import {CONFIG} from './config.js';
 import * as blockchain from './blockchain.js';
 import * as auth from './auth.js';
 import * as blacklist from './blacklist.js';
-import { showLoader, hideLoader, processPostTree, escapeSelector, getRoleBadge,renderMarkdown,getAllCategories } from './utils.js'; 
+import { showLoader, hideLoader, processPostTree, escapeSelector, getRoleBadge,renderMarkdown,getAllCategories,createSnippet } from './utils.js'; 
 import { 
     handleVoteClick, 
     handleDeleteClick, 
@@ -16,6 +16,7 @@ import {
     handleReplySubmit 
 } from './ui.js';
 import { startPostViewPoller, stopPostViewPoller } from './poller.js';
+import { setEasyMDEInstance, getEasyMDEInstance } from './app.js';
 // Não precisa importar poller.js aqui, pois render.js não o inicia.
 
 // Variáveis DOM que a renderização pode precisar (ajuste conforme o seu código):
@@ -97,8 +98,47 @@ export async function renderCategoryView(categoryId) {
 
         topicData.forEach(topic => {
             const lastPostAvatarUrl = blockchain.getAvatarUrl(topic.lastPostAuthor);
-            const lastPostHtml = `<div class="d-flex align-items-center" style="min-width: 180px;"><a href="?profile=${topic.lastPostAuthor}" class="me-2"><img src="${lastPostAvatarUrl}" class="rounded-circle" width="32" height="32" alt="${topic.lastPostAuthor}"></a><div><a href="?profile=${topic.lastPostAuthor}" class="text-break">@${topic.lastPostAuthor}</a><br><small class="text-muted"><a href="?post=@${topic.author}/${topic.permlink}" class="text-muted"><time datetime="${topic.lastPostDate}">${new Date(topic.lastPostDate).toLocaleString()}</time></a></small></div></div>`;
-            topicsHtml += `<li class="list-group-item"><div class="d-flex w-100 align-items-center"><div class="flex-grow-1"><h5 class="mb-1"><a href="?post=@${topic.author}/${topic.permlink}">${topic.title}</a></h5><small class="text-muted">By <a href="?profile=${topic.author}">@${topic.author}</a>, ${new Date(topic.created).toLocaleString()}</small></div><div class="text-center mx-4" style="min-width: 80px;"><span class="d-block fs-5">${topic.children}</span><small class="text-muted">replies</small></div>${lastPostHtml}</div></li>`;
+            
+            // 1. Bloco de Informação da Última Postagem (Last Post Block)
+            const lastPostHtml = `
+                <div class="d-flex align-items-center topic-last-post" style="min-width: 190px;">
+                    <a href="?profile=${topic.lastPostAuthor}" class="me-2 avatar-link">
+                        <img src="${lastPostAvatarUrl}" class="rounded-circle" width="36" height="36" alt="${topic.lastPostAuthor}">
+                    </a>
+                    <div class="text-start">
+                        <small class="text-muted d-block">
+                            <a href="?post=@${topic.author}/${topic.permlink}#@${topic.lastPostAuthor}/${topic.lastPostPermlink}" class="text-muted topic-last-post-link">
+                                ${new Date(topic.lastPostDate).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </a>
+                        </small>
+                        <a href="?profile=${topic.lastPostAuthor}" class="text-break fw-bold topic-last-post-author">@${topic.lastPostAuthor}</a>
+                    </div>
+                </div>`;
+            
+            // 2. Montagem do Tópico Completo
+            topicsHtml += `
+                <li class="list-group-item list-group-item-action topic-row">
+                    <div class="d-flex w-100 align-items-center">
+                        
+                        <div class="flex-grow-1 topic-main-info me-3">
+                            <h5 class="mb-1 fw-bold">
+                                <a href="?post=@${topic.author}/${topic.permlink}" class="text-decoration-none">${topic.title}</a>
+                            </h5>
+                            <small class="text-muted">
+                                By <a href="?profile=${topic.author}">@${topic.author}</a>, 
+                                <time datetime="${topic.created}">${new Date(topic.created).toLocaleDateString()}</time>
+                            </small>
+                        </div>
+                        
+                        <div class="text-center mx-4 topic-stats d-none d-sm-block" style="min-width: 80px;">
+                            <span class="d-block fs-5 fw-bold">${topic.children}</span>
+                            <small class="text-muted">replies</small>
+                        </div>
+                        
+                        ${lastPostHtml}
+                        
+                    </div>
+                </li>`;
         });
     } else {
         topicsHtml += '<li class="list-group-item">No topics found.</li>';
@@ -221,7 +261,10 @@ export async function renderPostView(author, permlink) {
         });
         appContainer.addEventListener('click', function(e) {
             const voteBtn = e.target.closest('.vote-btn');
-            if (voteBtn) handleVoteClick(voteBtn);
+            if (voteBtn) {
+                // ✅ Correto: Chama a função passando o objeto de evento 'e'
+                handleVoteClick(e);
+            }
             const replyBtn = e.target.closest('.reply-to-btn');
             if (replyBtn) {
                 const { author, permlink } = replyBtn.dataset;
@@ -246,10 +289,14 @@ export async function renderProfileView(username) {
 // -------------------------------------------------------------------
 // 5. VISUALIZAÇÃO DE EDIÇÃO E NOVO TÓPICO
 // -------------------------------------------------------------------
+// Local: js/modules/render(2).js (ou render.js)
+
 export async function renderNewTopicForm(categoryId) {
-    if (easyMDEInstance) {
-        try { easyMDEInstance.toTextArea(); } catch(e) {}
-        easyMDEInstance = null;
+    // 1. LIMPEZA E INFORMAÇÕES BÁSICAS (Sem alterações aqui)
+    const currentMDE = getEasyMDEInstance();
+    if (currentMDE) {
+        try { currentMDE.toTextArea(); } catch(e) {}
+        setEasyMDEInstance(null);
     }
 
     const category = getAllCategories().find(c => c.id === categoryId);
@@ -257,7 +304,11 @@ export async function renderNewTopicForm(categoryId) {
     if (!auth.getCurrentUser()) { renderError("You must be logged in to create a new topic."); return; }
 
     document.title = `New Topic in ${category.title} - ${CONFIG.forum_title}`;
-    const draftKey = `draft-new-${categoryId}`;
+    
+    // ✅ draftKey é definido aqui e é acessível dentro das funções aninhadas
+    const draftKey = `draft-new-${categoryId}`; 
+    // 🚨 CORREÇÃO: fullDraftKey deve ser definida ANTES de ser usada no bloco de rascunho.
+    const fullDraftKey = `full-draft-${draftKey}`; // ⬅️ DEFINIÇÃO AQUI
 
     appContainer.innerHTML = `
         <h2>New Topic in ${category.title}</h2>
@@ -272,41 +323,56 @@ export async function renderNewTopicForm(categoryId) {
     const titleEl = document.getElementById('topic-title');
     const bodyEl = document.getElementById('topic-body');
 
-    easyMDEInstance = new EasyMDE({
+    // 2. INICIALIZAÇÃO DO EASYMDE
+    const newInstance = new EasyMDE({
         element: bodyEl,
         spellChecker: false,
         placeholder: "Enter your content here...",
         autosave: { enabled: true, uniqueId: draftKey, delay: 1000 },
     });
+    setEasyMDEInstance(newInstance); // Atribui a nova instância globalmente
 
-    const fullDraftKey = `full-draft-${draftKey}`;
-    const savedDraft = localStorage.getItem(fullDraftKey);
+    
+    // 3. RECUPERAÇÃO DE RASCUNHO
+    // O erro estava aqui. A linha 314 (aproximadamente) era 'const fullDraftKey = `full-draft-${draftKey}`;'
+    // Mas essa linha foi movida para cima para a definição.
+
+    const savedDraft = localStorage.getItem(fullDraftKey); // ✅ fullDraftKey é acessível
     if (savedDraft) {
         try {
             const draft = JSON.parse(savedDraft);
             titleEl.value = draft.title || '';
-            easyMDEInstance.value(draft.body || '');
+            newInstance.value(draft.body || '');
         } catch (e) { 
-            easyMDEInstance.value(localStorage.getItem(draftKey) || '');
+            newInstance.value(localStorage.getItem(draftKey) || '');
         }
     }
 
+    // 4. SALVAMENTO DE RASCUNHO
     const saveFullDraft = () => {
-        const draft = { title: titleEl.value, body: easyMDEInstance.value() };
-        localStorage.setItem(fullDraftKey, JSON.stringify(draft));
+        // ✅ draftKey é acessível (closure)
+        // ✅ fullDraftKey é acessível (closure)
+        // ✅ newInstance é acessível (closure)
+        const draft = { title: titleEl.value, body: newInstance.value() }; 
+        localStorage.setItem(fullDraftKey, JSON.stringify(draft)); 
     };
     titleEl.addEventListener('input', saveFullDraft);
-    easyMDEInstance.codemirror.on('change', saveFullDraft);
+    newInstance.codemirror.on('change', saveFullDraft);
 
     document.getElementById('new-topic-form').addEventListener('submit', (e) => handlePostSubmit(e, fullDraftKey));
 }
 
+// Local: js/modules/render(2).js (ou render.js)
 
 export async function renderEditView(author, permlink) {
-    if (easyMDEInstance) {
-        try { easyMDEInstance.toTextArea(); } catch(e) {}
-        easyMDEInstance = null;
+    // 1. PREPARAÇÃO E LIMPEZA
+    const currentMDE = getEasyMDEInstance(); // ⬅️ Usa o getter para pegar a instância atual
+    
+    if (currentMDE) { // ✅ Usa a instância atual
+        try { currentMDE.toTextArea(); } catch(e) {}
+        setEasyMDEInstance(null); // ⬅️ CORREÇÃO: Limpa a referência usando o setter
     }
+    
     appContainer.innerHTML = '<div class="text-center mt-5"><div class="spinner-border"></div></div>';
 
     const post = await blockchain.getPostWithReplies(author, permlink);
@@ -318,6 +384,7 @@ export async function renderEditView(author, permlink) {
     document.title = `Editing: ${post.title || 'Reply'}`;
     const draftKey = `draft-edit-${post.author}-${post.permlink}`;
 
+    // ... (restante da lógica de renderização do HTML) ...
     appContainer.innerHTML = `
         <h2>Editing ${post.title ? 'Topic' : 'Reply'}</h2>
         <form id="edit-form">
@@ -331,14 +398,18 @@ export async function renderEditView(author, permlink) {
     const titleEl = document.getElementById('edit-title');
     const bodyEl = document.getElementById('edit-body');
 
-    easyMDEInstance = new EasyMDE({
+    // 2. INICIALIZAÇÃO E ATRIBUIÇÃO
+    const newInstance = new EasyMDE({ // ⬅️ Cria uma variável local para a nova instância
         element: bodyEl,
         spellChecker: false,
         autosave: { enabled: true, uniqueId: draftKey, delay: 1000 }
     });
+    
+    setEasyMDEInstance(newInstance); // ⬅️ CORREÇÃO: Atribui a nova instância globalmente usando o setter
 
+    // 3. RECUPERAÇÃO DE RASCUNHO E CARREGAMENTO
     const savedDraft = localStorage.getItem(draftKey);
-    easyMDEInstance.value(savedDraft || post.body);
+    newInstance.value(savedDraft || post.body); // ✅ Usa a nova instância local (newInstance)
 
     if (titleEl) {
         const savedTitleKey = `${draftKey}-title`;
@@ -349,6 +420,58 @@ export async function renderEditView(author, permlink) {
 
     document.getElementById('edit-form').addEventListener('submit', (e) => handleEditSubmit(e, post, draftKey));
 }
+export async function renderReplyForm(parentAuthor, parentPermlink, container) {
+    // 1. Limpeza da instância anterior (usando getter e setter)
+    const currentMDE = getEasyMDEInstance(); // ⬅️ Usa o getter
+    
+    if (currentMDE) {
+        try { currentMDE.toTextArea(); } catch(e) {}
+        setEasyMDEInstance(null); // ⬅️ CORREÇÃO: Usa o setter
+    }
+    
+    const existingForm = document.getElementById('reply-form');
+    if (existingForm) existingForm.parentElement.innerHTML = '';
 
+    const formHtml = `
+        <form id="reply-form" class="mt-3 mb-3 card card-body">
+            <h4>Reply to @${parentAuthor}</h4>
+            <div class="mb-3"><textarea class="form-control" id="reply-body" rows="5"></textarea></div>
+            <div id="reply-error" class="alert alert-danger d-none"></div>
+            <button type="submit" class="btn btn-primary">Submit Reply</button>
+            <button type="button" class="btn btn-secondary mt-2" id="cancel-reply">Cancel</button>
+        </form>`;
+    
+    if (container) {
+        container.innerHTML = formHtml;
+        
+        // 2. Inicialização da nova instância (variável local)
+        const newInstance = new EasyMDE({ // ⬅️ Variável local
+            element: document.getElementById('reply-body'),
+            spellChecker: false,
+            placeholder: "Enter your reply...",
+        });
 
+        setEasyMDEInstance(newInstance); // ⬅️ CORREÇÃO: Atribui a nova instância globalmente
+        
+        // 3. Configurações e Event Listeners
+        document.getElementById('reply-form').addEventListener('submit', (e) => {
+             // handleReplySubmit não precisa de easyMDEInstance no argumento
+             handleReplySubmit(e, parentAuthor, parentPermlink) 
+        });
+
+        document.getElementById('cancel-reply').addEventListener('click', () => {
+            // Lógica de cancelamento (usa a nova instância local para limpar)
+            if (newInstance) {
+                try { newInstance.toTextArea(); } catch(e) {}
+                setEasyMDEInstance(null); // ⬅️ CORREÇÃO: Limpa o global
+            }
+            container.innerHTML = '';
+        });
+        
+        // Foca o novo editor (usa a nova instância local)
+        newInstance.codemirror.focus();
+    } else {
+        console.error(`Could not find container for reply form to ${parentPermlink}`);
+    }
+}
 

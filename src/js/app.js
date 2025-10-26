@@ -18,13 +18,24 @@ import { showLoader, hideLoader, getDecryptedPostingKey, processPostTree, escape
 import { startPostViewPoller, stopPostViewPoller } from './poller.js';
 
 // Get DOM elements once
-const appContainer = document.getElementById('app');
+export const appContainer = document.getElementById('app');
 const authContainer = document.getElementById('auth-container');
 const loginModalElement = document.getElementById('loginModal');
 const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
 
-export let easyMDEInstance = null;
+let easyMDEInstance = null; // ⬅️ Variavel privada do módulo
+
+// Funções para controle de acesso:
+export function setEasyMDEInstance(instance) {
+    // Permite que o render.js defina a nova instância do editor
+    easyMDEInstance = instance;
+}
+
+export function getEasyMDEInstance() {
+    // Permite que ui.js ou outros módulos obtenham a instância atual
+    return easyMDEInstance;
+}
 
 
 /**
@@ -168,22 +179,6 @@ function pollForPost(author, permlink) {
     }, interval);
 }
 
-function pollForEdit(author, permlink, originalLastUpdate) {
-    let attempts = 0;
-    const maxAttempts = 15, interval = 2000;
-    const poller = setInterval(async () => {
-        attempts++;
-        const data = await blockchain.getPostAndDirectReplies(author, permlink);
-        if (data && data.post && data.post.last_update !== originalLastUpdate) {
-            clearInterval(poller);
-            Toastify({ text: "Edit confirmed!", backgroundColor: "green" }).showToast();
-            history.back();
-        } else if (attempts >= maxAttempts) {
-            clearInterval(poller);
-            Toastify({ text: "Edit was submitted, but it's taking a long time to confirm.", duration: 5000, backgroundColor: "orange" }).showToast();
-        }
-    }, interval);
-}
 
 
 
@@ -197,7 +192,7 @@ function pollForEdit(author, permlink, originalLastUpdate) {
 // js/app.js
 
 // Torne a função assíncrona para usar o loader (se você ainda não o fez)
-async function handleRouteChange() { 
+export async function handleRouteChange() { 
     
     // 1. CHAMA O MÓDULO PARA PARAR O POLLER
     // Substitui todo o bloco de clearInterval/postViewPoller/currentRenderVotes
@@ -371,5 +366,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             handleRouteChange();
         }
     });
+
+
+
     handleRouteChange();
 });

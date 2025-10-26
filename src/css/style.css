@@ -40,3 +40,66 @@ body {
     /* Alinha o badge com a linha de base do texto */
     vertical-align: baseline; 
 }
+
+
+
+/* Seu arquivo styles.css */
+
+/* 1. Estilo para a linha do tópico */
+.topic-row {
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* 2. Garante que as informações do tópico se expandam */
+.topic-main-info {
+    /* Garante que o título e as infos fiquem visíveis */
+    min-width: 0; 
+}
+
+/* 3. Ajuste do tamanho da fonte e cor do título */
+.topic-main-info h5 a {
+    color: var(--bs-body-color); /* Usa a cor do texto do tema */
+    transition: color 0.15s;
+}
+
+.topic-row:hover .topic-main-info h5 a {
+    color: var(--bs-primary); /* Destaca o título ao passar o mouse */
+}
+
+/* 4. Estilo da Coluna de Respostas */
+.topic-stats {
+    /* Opcional: Efeito visual para a contagem de replies */
+    border-left: 1px solid var(--bs-border-color);
+    border-right: 1px solid var(--bs-border-color);
+}
+
+
+/* 6. Responsividade (Opcional, mas recomendado) */
+@media (max-width: 576px) {
+    /* Esconde as estatísticas em telas muito pequenas para economizar espaço */
+    .topic-stats {
+        display: none !important;
+    }
+}
+
+/* Garante que o texto do snippet não quebre e seja truncado se necessário */
+.topic-last-post .text-truncate {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    /* Reduz o tamanho da fonte do snippet para economizar espaço */
+    font-size: 0.85em; 
+}
+
+/* Garante que a data/hora fique em um bloco limpo */
+.topic-last-post-link {
+    white-space: nowrap; /* Evita que a data quebre a linha */
+}
+
+/* Aumenta a largura mínima para acomodar o snippet */
+@media (min-width: 768px) {
+    .topic-last-post {
+        /* Garante espaço suficiente para o avatar, nome e snippet */
+        min-width: 280px !important; 
+    }
+}

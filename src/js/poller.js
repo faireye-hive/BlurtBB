@@ -2,6 +2,7 @@ import * as auth from './auth.js';
 import * as blockchain from './blockchain.js';
 import * as blacklist from './blacklist.js';
 import { processPostTree, escapeSelector } from './utils.js'; // Depende de utils.js
+import { handleRouteChange } from './app.js';
 
 // Variáveis de estado global para o poller
 let postViewPoller = null;
@@ -126,4 +127,21 @@ export function stopPostViewPoller() {
         clearInterval(postViewPoller);
         postViewPoller = null;
     }
+}
+
+export function pollForEdit(author, permlink, originalLastUpdate) {
+    let attempts = 0;
+    const maxAttempts = 15, interval = 2000;
+    const poller = setInterval(async () => {
+        attempts++;
+        const data = await blockchain.getPostAndDirectReplies(author, permlink);
+        if (data && data.post && data.post.last_update !== originalLastUpdate) {
+            clearInterval(poller);
+            Toastify({ text: "Edit confirmed!", backgroundColor: "green" }).showToast();
+            history.back();
+        } else if (attempts >= maxAttempts) {
+            clearInterval(poller);
+            Toastify({ text: "Edit was submitted, but it's taking a long time to confirm.", duration: 5000, backgroundColor: "orange" }).showToast();
+        }
+    }, interval);
 }

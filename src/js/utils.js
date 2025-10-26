@@ -84,44 +84,6 @@ export function getRoleBadge(username) {
     return '';
 }
 
-export async function renderReplyForm(parentAuthor, parentPermlink, container) {
-    if (easyMDEInstance) {
-        try { easyMDEInstance.toTextArea(); } catch(e) {}
-        easyMDEInstance = null;
-    }
-    const existingForm = document.getElementById('reply-form');
-    if (existingForm) existingForm.parentElement.innerHTML = '';
-
-    const formHtml = `
-        <form id="reply-form" class="mt-3 mb-3 card card-body">
-            <h4>Reply to @${parentAuthor}</h4>
-            <div class="mb-3"><textarea class="form-control" id="reply-body" rows="5"></textarea></div>
-            <div id="reply-error" class="alert alert-danger d-none"></div>
-            <button type="submit" class="btn btn-primary">Submit Reply</button>
-            <button type="button" class="btn btn-secondary mt-2" id="cancel-reply">Cancel</button>
-        </form>`;
-    
-    if (container) {
-        container.innerHTML = formHtml;
-        easyMDEInstance = new EasyMDE({
-            element: document.getElementById('reply-body'),
-            spellChecker: false,
-            placeholder: "Enter your reply...",
-        });
-        document.getElementById('reply-form').addEventListener('submit', (e) => handleReplySubmit(e, parentAuthor, parentPermlink));
-        document.getElementById('cancel-reply').addEventListener('click', () => {
-            if (easyMDEInstance) {
-                try { easyMDEInstance.toTextArea(); } catch(e) {}
-                easyMDEInstance = null;
-            }
-            container.innerHTML = '';
-        });
-        easyMDEInstance.codemirror.focus();
-    } else {
-        console.error(`Could not find container for reply form to ${parentPermlink}`);
-    }
-}
-
 
 export async function renderError(message) {
     appContainer.innerHTML = `<div class="alert alert-danger">${message}</div><a href="/">Back to Home</a>`;
@@ -166,4 +128,20 @@ export function renderMarkdown(text) {
 
 export function getAllCategories() {
     return CONFIG.category_groups.flatMap(group => group.categories);
+}
+
+// Função auxiliar para criar um snippet de texto limpo
+export function createSnippet(text, maxLength = 80) {
+    if (!text) return '';
+    
+    // 1. Remove Markdown ou HTML simples (para garantir texto limpo)
+    // Isso é uma simplificação, para remover tags como ** negrito **
+    let cleanText = text.replace(/([_*~`>\[\]()-])/g, ''); // Remove caracteres markdown comuns
+    cleanText = cleanText.replace(/\n/g, ' '); // Substitui quebras de linha por espaços
+
+    // 2. Trunca o texto
+    if (cleanText.length > maxLength) {
+        return cleanText.substring(0, maxLength).trim() + '...';
+    }
+    return cleanText.trim();
 }
