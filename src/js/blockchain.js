@@ -335,3 +335,34 @@ export async function getPostsByAuthor(author, limit = 20, startAuthor = null, s
         });
     });
 }
+
+export async function getAllPostsByAuthor(author, batchSize = 100) {
+  let allPosts = [];
+  let startAuthor = null;
+  let startPermlink = null;
+  let keepGoing = true;
+
+  while (keepGoing) {
+    const posts = await getPostsByAuthor(author, batchSize, startAuthor, startPermlink);
+
+    if (posts.length === 0) break;
+
+    const ownPosts = posts.filter(
+      (p) => p.author === author && (!p.reblogged_by || p.reblogged_by.length === 0)
+    );
+    allPosts.push(...ownPosts);
+
+    // Atualiza o ponto de partida para a próxima requisição
+    const last = posts[posts.length - 1];
+    startAuthor = last.author;
+    startPermlink = last.permlink;
+
+    // A API retorna o mesmo último item na próxima chamada — evita loop infinito
+    if (posts.length < batchSize) {
+      keepGoing = false;
+    }
+  }
+  console.log('allPosts');
+  console.log(allPosts);
+  return allPosts;
+}

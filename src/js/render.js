@@ -30,22 +30,21 @@ import { setEasyMDEInstance, getEasyMDEInstance } from './app.js';
 // Variáveis DOM que a renderização pode precisar (ajuste conforme o seu código):
 const appContainer = document.getElementById('app'); 
 
-let profilePaginationState = {
-    author: null,
-    lastAuthor: null,
-    lastPermlink: null,
-    isLoading: false,
-    hasMore: true,
-    limit: 20,
-    postsContainerId: 'profile-posts-content-list'
-};
-
 function clearBreadcrumb() {
     const breadcrumbContainer = document.getElementById('breadcrumb-container');
     if (breadcrumbContainer) {
         breadcrumbContainer.innerHTML = '';
     }
 }
+
+const POSTS_PER_PAGE = 20; // Defina a quantidade de posts por página.
+
+// Estado para armazenar todos os posts de um usuário e a página atual.
+let profileState = {
+    author: null,
+    allProfilePosts: [],
+    currentPage: 1
+};
 
 // -------------------------------------------------------------------
 // FUNÇÕES DE TEMPLATE (Se houver, é bom movê-las para utils.js ou templates.js)
@@ -81,71 +80,6 @@ export async function renderMainView() {
     appContainer.innerHTML = html;
 }
 
-/**
- * Carrega posts adicionais para o perfil e anexa ao DOM.
- * @param {boolean} isInitialLoad - Se for o primeiro carregamento, limpa o container.
- */
-async function loadMoreProfilePosts(isInitialLoad = false) {
-    if (profilePaginationState.isLoading || (!profilePaginationState.hasMore && !isInitialLoad)) {
-        return; // Não faz nada se já estiver carregando ou se não houver mais posts
-    }
-    
-    profilePaginationState.isLoading = true;
-    
-    const loadMoreBtn = document.getElementById('load-more-profile-posts');
-    const postsContainer = document.getElementById(profilePaginationState.postsContainerId);
-    
-    if (loadMoreBtn) loadMoreBtn.disabled = true;
-
-    try {
-        // 1. Chamar a API com os parâmetros de paginação
-        const newPosts = await blockchain.getPostsByAuthor(
-            profilePaginationState.author, 
-            profilePaginationState.limit,
-            profilePaginationState.lastAuthor, 
-            profilePaginationState.lastPermlink
-        );
-
-        // 2. Anexar os posts
-        const newHtml = renderTopicsList(newPosts);
-        
-        if (isInitialLoad) {
-            // Se for o carregamento inicial, substitui o conteúdo
-            postsContainer.innerHTML = newHtml; 
-        } else {
-            // Se for 'load more', apenas adiciona
-            postsContainer.insertAdjacentHTML('beforeend', newHtml);
-        }
-
-        // 3. Atualizar o estado da paginação
-        if (newPosts.length < profilePaginationState.limit) {
-            profilePaginationState.hasMore = false;
-        }
-        
-        if (newPosts.length > 0) {
-            const lastPost = newPosts[newPosts.length - 1];
-            profilePaginationState.lastAuthor = lastPost.author;
-            profilePaginationState.lastPermlink = lastPost.permlink;
-        }
-
-    } catch (error) {
-        console.error("Failed to load more profile posts:", error);
-        // Deixe a mensagem de erro no topo, não no botão
-    } finally {
-        profilePaginationState.isLoading = false;
-        
-        // 4. Lógica do botão "Load More"
-        if (loadMoreBtn) {
-            if (profilePaginationState.hasMore) {
-                loadMoreBtn.disabled = false;
-                loadMoreBtn.textContent = 'Load More Topics';
-            } else {
-                loadMoreBtn.textContent = 'End of Feed';
-                loadMoreBtn.disabled = true;
-            }
-        }
-    }
-}
 
 // -------------------------------------------------------------------
 // 2. VISUALIZAÇÃO DE TÓPICOS/CATEGORIA
@@ -407,6 +341,9 @@ export async function renderProfileView(username) {
     stopPostViewPoller();
     showLoader();
     
+    // 2. TENTAR USAR O ESTADO JÁ CARREGADO (A CHAVE PARA SPAs)
+    // Se já temos posts para este usuário, pule a busca da API.
+    let postsAlreadyLoaded = profileState.author === username && profileState.allProfilePosts.length > 0;
     // 2. Carregar dados do usuário e primeira página de posts
     let account = null;
     let initialPosts = [];
@@ -414,7 +351,13 @@ export async function renderProfileView(username) {
     try {
         account = await blockchain.getAccount(username); 
         // 🚨 Puxa 21 posts: 20 para exibir + 1 para a paginação
-        initialPosts = await blockchain.getPostsByAuthor(username, 21); 
+        if (!postsAlreadyLoaded) {
+             // 🚨 SÓ CHAMA A API SE NÃO TIVERMOS OS DADOS EM MEMÓRIA
+             initialPosts = await blockchain.getAllPostsByAuthor(username); 
+        } else {
+             // Se já está carregado, use o array do estado
+             initialPosts = profileState.allProfilePosts; 
+        }
 
     } catch (error) {
         hideLoader();
@@ -425,20 +368,17 @@ export async function renderProfileView(username) {
         hideLoader();
         return renderNotFound();
     }
+
+    // 3. Configurar/Atualizar o estado SOMENTE se for um novo usuário ou nova busca
+    if (!postsAlreadyLoaded) {
+        profileState.author = username;
+        // Ordena por data de criação (mais recente primeiro)
+        profileState.allProfilePosts = initialPosts.sort((a, b) => new Date(b.created) - new Date(a.created)); 
+        profileState.currentPage = 1; // Sempre começa na página 1, se for uma nova busca.
+    }
     
     // Configuração inicial da paginação
     const postsToDisplay = initialPosts.slice(0, 20); // Exibe apenas os primeiros 20
-    const hasMore = initialPosts.length > 20;
-
-    profilePaginationState = {
-        author: username,
-        lastAuthor: hasMore ? postsToDisplay[postsToDisplay.length - 1].author : null,
-        lastPermlink: hasMore ? postsToDisplay[postsToDisplay.length - 1].permlink : null,
-        isLoading: false,
-        hasMore: hasMore,
-        limit: 20,
-        postsContainerId: 'profile-posts-content-list'
-    };
     
     // 3. Preparar dados
     const avatarUrl = blockchain.getAvatarUrl(username);
@@ -449,6 +389,11 @@ export async function renderProfileView(username) {
         { text: 'Home', href: '?' },
         { text: `Profile: @${username}`, href: null }
     ]);
+
+    profileState.author = username;
+        // Ordena por data de criação (mais recente primeiro)
+    profileState.allProfilePosts = initialPosts.sort((a, b) => new Date(b.created) - new Date(a.created)); 
+    profileState.currentPage = 1; // Sempre começa na página 1
     
     // 5. Montar o HTML do Perfil
     let html = `
@@ -463,7 +408,7 @@ export async function renderProfileView(username) {
                         <ul class="list-unstyled text-start small">
                             <li><strong>BLURT Balance:</strong> ${account.balance}</li>
                             <li><strong>Blurt Power:</strong> ${account.vesting_shares.split(' ')[0]} BP</li>
-                            <li><strong>Posts:</strong> ${postsToDisplay.length}${hasMore ? '+' : ''}</li> 
+                            <li><strong>Posts:</strong> ${initialPosts.length}${initialPosts.length ? '+' : ''}</li> 
                         </ul>
                     </div>
                 </div>
@@ -485,13 +430,16 @@ export async function renderProfileView(username) {
                     <div class="card-body">
                         <div class="tab-content" id="profileTabsContent">
                             <div class="tab-pane fade show active" id="posts-content" role="tabpanel" aria-labelledby="posts-tab">
-                                <div id="profile-posts-content-list">
-                                    ${renderTopicsList(postsToDisplay)}
-                                </div>
-                                <div class="text-center mt-3">
-                                    <button id="load-more-profile-posts" class="btn btn-secondary btn-sm" ${!hasMore ? 'disabled' : ''}>
-                                        ${hasMore ? 'Load More Topics' : 'End of Feed'}
-                                    </button>
+                               
+                                <div class="tab-content" id="profileTabsContent">
+                                        <div class="tab-pane fade show active" id="posts-content" role="tabpanel" aria-labelledby="posts-tab">
+                                            
+                                            <div id="profile-posts-content-list">  
+                                            </div>
+                                            
+                                            <div id="profile-pagination-controls" class="d-flex justify-content-center">
+                                                </div>
+                                        </div>
                                 </div>
                             </div>
                             <div class="tab-pane fade" id="replies-content" role="tabpanel" aria-labelledby="replies-tab">
@@ -507,13 +455,15 @@ export async function renderProfileView(username) {
     document.title = `@${username}'s Profile - ${CONFIG.forum_title}`;
     appContainer.innerHTML = html;
     hideLoader();
-    
-    // 6. Configurações Finais e Event Listeners
-    const loadMoreBtn = document.getElementById('load-more-profile-posts');
-    if (loadMoreBtn) {
-        // Adiciona o listener para o clique (para carregamentos subsequentes)
-        loadMoreBtn.addEventListener('click', () => loadMoreProfilePosts('profile-posts-content-list'));
+
+    renderProfilePosts();
+
+    const paginationContainer = document.getElementById('profile-pagination-controls');
+    if (paginationContainer) {
+        // Delegação de evento: um único listener no container para todos os botões
+        paginationContainer.addEventListener('click', handlePaginationClick); 
     }
+    
     
     const tabEl = document.getElementById('profileTabs');
     if (tabEl && window.bootstrap && window.bootstrap.Tab) {
@@ -823,4 +773,126 @@ export async function renderNotFound() {
         <a href="/">Back to Home</a>`;
     document.title = `Not Found - ${CONFIG.forum_title}`;
     hideLoader();
+}
+
+
+// js/modules/render.js (Novas funções auxiliares)
+
+/**
+ * Gera o HTML dos controles de paginação numérica.
+ */
+function renderPaginationControls(totalPosts, currentPage) {
+    if (totalPosts === 0) return '';
+
+    const totalPages = Math.ceil(totalPosts / POSTS_PER_PAGE);
+    if (totalPages <= 1) return '';
+
+    let html = `
+        <nav aria-label="Navegação de posts" class="mt-4">
+            <ul class="pagination justify-content-center">
+    `;
+
+    // ... (Lógica para startPage e endPage) ...
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+
+    if (currentPage <= 3) {
+        endPage = Math.min(totalPages, 5);
+        startPage = 1;
+    }
+    if (currentPage > totalPages - 2) {
+        startPage = Math.max(1, totalPages - 4);
+        endPage = totalPages;
+    }
+
+
+    // Botão Anterior
+    html += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link page-nav-link" href="javascript:;" data-page="${currentPage - 1}">Anterior</a>
+        </li>
+    `;
+
+    // Botões Numéricos
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link page-nav-link" href="javascript:;" data-page="${i}">${i}</a>
+            </li>
+        `;
+    }
+
+    // Botão Próximo
+    html += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link page-nav-link" href="javascript:;" data-page="${currentPage + 1}">Próximo</a>
+        </li>
+    `;
+
+    html += `
+            </ul>
+        </nav>
+    `;
+    return html;
+}
+
+/**
+ * Lida com o clique nos botões de paginação (1, 2, 3, Anterior, Próximo).
+ */
+function handlePaginationClick(e) {
+    // 🚨 Esta linha é CRÍTICA. Você deve prevenir a ação padrão (ir para #) IMEDIATAMENTE.
+    e.preventDefault(); 
+    
+    const link = e.target.closest('.page-nav-link');
+    
+    // Se o clique não foi em um link de paginação (por exemplo, no '...' desabilitado), saia.
+    if (!link || link.parentElement.classList.contains('disabled')) {
+        return; 
+    }
+    
+    const newPage = parseInt(link.dataset.page);
+    const totalPages = Math.ceil(profileState.allProfilePosts.length / POSTS_PER_PAGE);
+
+    if (newPage >= 1 && newPage <= totalPages) {
+        profileState.currentPage = newPage;
+        renderProfilePosts(); // Redesenha a página com o novo conteúdo
+    }
+    // Não precisa de history.pushState aqui, pois você não está mudando a URL
+}
+
+/**
+ * Renderiza os posts para a página atual e atualiza os controles de paginação.
+ */
+function renderProfilePosts() {
+    const { allProfilePosts, currentPage } = profileState;
+    const postsContainer = document.getElementById('profile-posts-content-list');
+    const paginationContainer = document.getElementById('profile-pagination-controls');
+
+    if (!postsContainer) return;
+
+    if (allProfilePosts.length === 0) {
+        postsContainer.innerHTML = '<p class="text-muted text-center">Nenhum post encontrado.</p>';
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
+
+    // 1. Calcular o fatiamento (slice) para a página atual
+    const startIndex = (currentPage - 1) * POSTS_PER_PAGE;
+    const endIndex = startIndex + POSTS_PER_PAGE;
+    const postsToDisplay = allProfilePosts.slice(startIndex, endIndex);
+
+    // 2. Renderizar os posts
+    // 🚨 ATENÇÃO: Verifique se 'renderTopicsList' existe e está sendo importado/definido
+    postsContainer.innerHTML = renderTopicsList(postsToDisplay); 
+
+    // 3. Renderizar e anexar os controles de paginação
+    if (paginationContainer) {
+        paginationContainer.innerHTML = renderPaginationControls(
+            allProfilePosts.length,
+            currentPage
+        );
+    }
+    
+    // Rola para o topo do feed (boa UX)
+    postsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
