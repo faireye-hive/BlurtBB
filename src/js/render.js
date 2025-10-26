@@ -30,6 +30,13 @@ import { setEasyMDEInstance, getEasyMDEInstance } from './app.js';
 // Variáveis DOM que a renderização pode precisar (ajuste conforme o seu código):
 const appContainer = document.getElementById('app'); 
 
+function clearBreadcrumb() {
+    const breadcrumbContainer = document.getElementById('breadcrumb-container');
+    if (breadcrumbContainer) {
+        breadcrumbContainer.innerHTML = '';
+    }
+}
+
 // -------------------------------------------------------------------
 // FUNÇÕES DE TEMPLATE (Se houver, é bom movê-las para utils.js ou templates.js)
 // Por enquanto, assumimos que estão dentro das funções de renderização.
@@ -41,6 +48,7 @@ const appContainer = document.getElementById('app');
 export async function renderMainView() {
     document.title = CONFIG.forum_title;
     let html = `<h1>${CONFIG.forum_title}</h1>`;
+    clearBreadcrumb();
     CONFIG.category_groups.forEach(group => {
         html += `<div class="card mb-4"><div class="card-header"><h4>${group.group_title}</h4></div><div class="list-group list-group-flush">`;
         group.categories.forEach(cat => {
@@ -75,7 +83,14 @@ export async function renderCategoryView(categoryId) {
     const category = getAllCategories().find(c => c.id === categoryId);
     if (!category) { renderNotFound(); return; }
 
+
     document.title = `${category.title} - ${CONFIG.forum_title}`;
+    renderBreadcrumb([
+        { text: 'Home', href: '?' },
+        { text: category ? category.title : 'Category', href: null } 
+    ]);
+
+
     const user = auth.getCurrentUser();
     let headerHtml = `<div class="d-flex justify-content-between align-items-center mb-3"><div><h2>${category.title}</h2><p class="mb-0">${category.description}</p></div>${user ? `<a href="?new_topic_in=${categoryId}" class="btn btn-primary">New Topic</a>` : ''}</div>`;
 
@@ -173,6 +188,36 @@ export async function renderPostView(author, permlink) {
         return;
     }
     const post = await blockchain.getPostWithReplies(author, permlink);
+
+// O campo 'category' do post pode ser a tag completa (ex: 'fdsfdsf-off-topic').
+    const rawCategory = post.category || CONFIG.main_tag;
+    
+    // 🚨 CORREÇÃO AQUI: Limpa o ID da categoria, removendo o prefixo
+    let categoryId = rawCategory.startsWith(CONFIG.tag_prefix)
+        ? rawCategory.substring(CONFIG.tag_prefix.length) // Remove 'fdsfdsf-'
+        : rawCategory;
+        
+    // Se o ID for a tag principal, ela pode não estar na lista de categorias (se for só o tag do fórum)
+    if (categoryId === CONFIG.main_tag) {
+        categoryId = 'general'; // OU o ID de categoria que você quer como default
+    }
+
+
+    const categories = getAllCategories();
+    let category = categories.find(c => c.id === categoryId);
+    
+    // Fallback caso a categoria não seja encontrada ou seja a tag principal que não está na lista
+    if (!category) {
+        // Cria um objeto temporário para garantir que o breadcrumb funcione.
+        category = { id: categoryId, title: categoryId.toUpperCase() }; 
+    }
+    
+    // 🚨 ATENÇÃO: Chame o Breadcrumb com a variável 'category' corrigida
+    renderBreadcrumb([
+        { text: 'Home', href: '?' },
+        { text: category.title, href: `?category=${category.id}` }, // Link para a categoria
+        { text: createSnippet(post.title, 50), href: null } // Título truncado, sem link
+    ]);
 
     if (!post || !post.author) { renderNotFound(); return; }
 
@@ -489,3 +534,44 @@ export async function renderReplyForm(parentAuthor, parentPermlink, container) {
     }
 }
 
+/**
+ * Cria e injeta o HTML do Breadcrumb no appContainer.
+ * @param {Array<Object>} items - Array de objetos { text: string, href: string|null }.
+ */
+function renderBreadcrumb(items) {
+    // 1. Encontra ou cria o container do breadcrumb
+    let breadcrumbContainer = document.getElementById('breadcrumb-container');
+    if (!breadcrumbContainer) {
+        // Se não existir (primeira vez), cria um elemento para segurar o breadcrumb
+        breadcrumbContainer = document.createElement('div');
+        breadcrumbContainer.id = 'breadcrumb-container';
+        breadcrumbContainer.className = 'container my-3';
+        
+        // 🚨 IMPORTANTE: Injeta o container APÓS o menu e ANTES do appContainer (se a estrutura permitir)
+        // Se o appContainer for o elemento principal, talvez seja melhor injetar o Breadcrumb
+        // em um elemento pai ou antes de 'appContainer.innerHTML = ...'
+        // Assumindo que o appContainer é o contêiner do conteúdo principal:
+        const mainContentArea = document.getElementById('main-content-area') || appContainer.parentElement; 
+        mainContentArea.insertBefore(breadcrumbContainer, appContainer);
+    }
+    
+    // 2. Constrói o HTML do Breadcrumb do Bootstrap
+    let html = '<nav aria-label="breadcrumb"><ol class="breadcrumb">';
+
+    items.forEach((item, index) => {
+        const isLast = index === items.length - 1;
+        const activeClass = isLast ? 'active' : '';
+        const link = item.href ? `<a href="${item.href}">${item.text}</a>` : item.text;
+
+        html += `
+            <li class="breadcrumb-item ${activeClass}" ${isLast ? 'aria-current="page"' : ''}>
+                ${link}
+            </li>
+        `;
+    });
+
+    html += '</ol></nav>';
+    
+    // 3. Injeta o HTML
+    breadcrumbContainer.innerHTML = html;
+}
