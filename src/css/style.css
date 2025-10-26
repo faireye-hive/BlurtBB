@@ -35,3 +35,8 @@ body {
     overflow-wrap: break-word;
 }
 
+/* Garante que o badge esteja alinhado com o texto dentro do <h5> */
+.category-info h5 .badge {
+    /* Alinha o badge com a linha de base do texto */
+    vertical-align: baseline; 
+}

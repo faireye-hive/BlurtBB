@@ -12,17 +12,20 @@ export const CONFIG = {
                 {
                     "id": "announcements",
                     "title": "Announcements",
-                    "description": "Official news and updates from the team."
+                    "description": "Official news and updates from the team.",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
                 },
                 {
                     "id": "introductions",
                     "title": "Introductions",
-                    "description": "Say hello and introduce yourself to the community."
+                    "description": "Say hello and introduce yourself to the community.",
+                    "count": 1 // This will be updated dynamically based on the number of posts in this category
                 },
                 {
                     "id": "support",
                     "title": "Help & Support",
-                    "description": "Get help with using the forum or Blurt."
+                    "description": "Get help with using the forum or Blurt.",
+                    "count": 1 // This will be updated dynamically based on the number of posts in this category
                 }
             ]
         },
@@ -32,17 +35,20 @@ export const CONFIG = {
                 {
                     "id": "general",
                     "title": "General Discussion",
-                    "description": "General chat about the Blurt blockchain."
+                    "description": "General chat about the Blurt blockchain.",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
                 },
                 {
                     "id": "development",
                     "title": "Development & DApps",
-                    "description": "Discuss technical details, development, and applications on Blurt."
+                    "description": "Discuss technical details, development, and applications on Blurt.",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
                 },
                 {
                     "id": "trading",
                     "title": "Trading & Markets",
-                    "description": "Price, markets, and speculation."
+                    "description": "Price, markets, and speculation.",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
                 }
             ]
         },
@@ -52,12 +58,14 @@ export const CONFIG = {
                 {
                     "id": "witnesses",
                     "title": "Witnesses",
-                    "description": "Discussions about Blurt witnesses."
+                    "description": "Discussions about Blurt witnesses.",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
                 },
                 {
                     "id": "off-topic",
                     "title": "Off-Topic",
-                    "description": "For everything else."
+                    "description": "For everything else.",
+                    "count": 3 // This will be updated dynamically based on the number of posts in this category
                 }
             ]
         }

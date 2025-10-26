@@ -35,7 +35,19 @@ export async function renderMainView() {
     CONFIG.category_groups.forEach(group => {
         html += `<div class="card mb-4"><div class="card-header"><h4>${group.group_title}</h4></div><div class="list-group list-group-flush">`;
         group.categories.forEach(cat => {
-            html += `<a href="?category=${cat.id}" class="list-group-item list-group-item-action"><div class="d-flex w-100 justify-content-between"><h5 class="mb-1">${cat.title}</h5></div><p class="mb-1">${cat.description}</p></a>`;
+            const postCount = cat.count || 0; // Use o valor de contagem atualizado dinamicamente, ou 0 se não estiver definido. Isso garante que mesmo que a contagem não tenha sido atualizada, o layout ainda funcione corretamente. Se você tiver uma função para atualizar essas contagens dinamicamente, certifique-se de chamá-la antes de renderizar a visualização principal para garantir que os números estejam corretos.
+            
+            html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div class="category-info">
+                            <h5>
+                                <span class="badge bg-secondary rounded-pill me-2">${postCount}</span>
+                                
+                                <a href="?category=${cat.id}" data-route>${cat.title}</a>
+                            </h5>
+                            <p class="text-muted mb-0">${cat.description}</p>
+                        </div>
+                        
+                        </li>`;
         });
         html += `</div></div>`;
     });
