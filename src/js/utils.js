@@ -145,3 +145,43 @@ export function createSnippet(text, maxLength = 80) {
     }
     return cleanText.trim();
 }
+
+/**
+ * Extrai o autor e permlink do post raiz a partir da propriedade 'url' do post.
+ * Ex: '/tag-categoria/@autor/permlink-root#fragment' -> ['autor', 'permlink-root']
+ * @param {string} postUrl - O campo 'url' do objeto post.
+ * @returns {{author: string, permlink: string}|null} Objeto com autor e permlink raiz.
+ */
+export function extractRootLinkFromUrl(postUrl) {
+    if (!postUrl) return null;
+    
+    // 1. Remove o fragmento (#) do reply
+    const urlWithoutFragment = postUrl.split('#')[0];
+    
+    // 2. Remove o prefixo de tag, categoria e barras iniciais
+    // Ex: /fdsfdsf-off-topic/@bgo/permlink-root
+    const tagPrefix = CONFIG.tag_prefix; // ex: fdsfdsf-
+    
+    // Expressão regular para encontrar '@autor/permlink' após a tag e categoria
+    // Pega o que está após a última barra.
+    const match = urlWithoutFragment.match(/@([a-zA-Z0-9-.]+)\/([^/]+)$/);
+
+    if (match && match.length === 3) {
+        return {
+            author: match[1], // O primeiro grupo capturado (autor)
+            permlink: match[2] // O segundo grupo capturado (permlink)
+        };
+    }
+    
+    // Retorna null ou tenta parsear o que sobrou como se fosse um post raiz
+    // Ex: /@autor/permlink
+    const simpleMatch = urlWithoutFragment.match(/@([a-zA-Z0-9-.]+)\/([^/]+)$/);
+    if (simpleMatch && simpleMatch.length === 3) {
+        return {
+            author: simpleMatch[1],
+            permlink: simpleMatch[2]
+        };
+    }
+
+    return null;
+}

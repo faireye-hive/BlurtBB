@@ -7,7 +7,15 @@ import {CONFIG} from './config.js';
 import * as blockchain from './blockchain.js';
 import * as auth from './auth.js';
 import * as blacklist from './blacklist.js';
-import { showLoader, hideLoader, processPostTree, escapeSelector, getRoleBadge,renderMarkdown,getAllCategories,createSnippet } from './utils.js'; 
+import { showLoader, 
+        hideLoader, 
+        processPostTree, 
+        escapeSelector, 
+        getRoleBadge,
+        renderMarkdown,
+        getAllCategories,
+        createSnippet,
+        extractRootLinkFromUrl } from './utils.js'; 
 import { 
     handleVoteClick, 
     handleDeleteClick, 
@@ -165,8 +173,6 @@ export async function renderPostView(author, permlink) {
         return;
     }
     const post = await blockchain.getPostWithReplies(author, permlink);
-    console.log("DEBUG: POST RETORNADO DE blockchain.getPostWithReplies:");
-    console.log(post);
 
     if (!post || !post.author) { renderNotFound(); return; }
 
@@ -175,11 +181,6 @@ export async function renderPostView(author, permlink) {
     const postAuthorAvatarUrl = blockchain.getAvatarUrl(post.author);
 
     const { allReplies, contentMap } = processPostTree(post); // Usa a função exportada
-
-    //const renderedBody = await renderMarkdown(post.body);
-
-    console.log(post.author, post.permlink);
-
 
     let html = `
         <div class="card mb-3">
@@ -206,8 +207,6 @@ export async function renderPostView(author, permlink) {
             </div>
         </div>
         <h3>Replies</h3>`;
-
-        
 
     if (allReplies.length > 0) {
         html += '<div class="list-group">';
@@ -367,7 +366,7 @@ export async function renderNewTopicForm(categoryId) {
 export async function renderEditView(author, permlink) {
     // 1. PREPARAÇÃO E LIMPEZA
     const currentMDE = getEasyMDEInstance(); // ⬅️ Usa o getter para pegar a instância atual
-    
+
     if (currentMDE) { // ✅ Usa a instância atual
         try { currentMDE.toTextArea(); } catch(e) {}
         setEasyMDEInstance(null); // ⬅️ CORREÇÃO: Limpa a referência usando o setter
@@ -376,6 +375,7 @@ export async function renderEditView(author, permlink) {
     appContainer.innerHTML = '<div class="text-center mt-5"><div class="spinner-border"></div></div>';
 
     const post = await blockchain.getPostWithReplies(author, permlink);
+
     if (!post || post.author !== auth.getCurrentUser()) {
         renderError("You do not have permission to edit this.");
         return;
@@ -383,6 +383,20 @@ export async function renderEditView(author, permlink) {
 
     document.title = `Editing: ${post.title || 'Reply'}`;
     const draftKey = `draft-edit-${post.author}-${post.permlink}`;
+
+    let finalAuthor = author;
+    let finalPermlink = permlink;
+    // Se o post for um reply (o título está vazio) E tiver uma URL
+    if (!post.title && post.url) {
+        const rootLink = extractRootLinkFromUrl(post.url);
+        
+        if (rootLink) {
+            finalAuthor = rootLink.author;
+            finalPermlink = rootLink.permlink;
+        }
+    }
+
+    const cancelUrl = `?post=@${finalAuthor}/${finalPermlink}`;
 
     // ... (restante da lógica de renderização do HTML) ...
     appContainer.innerHTML = `
@@ -392,8 +406,8 @@ export async function renderEditView(author, permlink) {
             <div class="mb-3"><label for="edit-body" class="form-label">Content</label><textarea id="edit-body" rows="10"></textarea></div>
             <div id="edit-error" class="alert alert-danger d-none"></div>
             <button type="submit" class="btn btn-primary">Save Changes</button>
-            <a href="?post=@${author}/${permlink}" class="btn btn-secondary">Cancel</a>
-        </form>`;
+            <a href="${cancelUrl}" class="btn btn-secondary">Cancel</a> 
+        </form>`; // ⬅️ USA A VARIÁVEL CORRIGIDA
     
     const titleEl = document.getElementById('edit-title');
     const bodyEl = document.getElementById('edit-body');
