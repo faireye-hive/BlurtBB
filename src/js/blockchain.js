@@ -272,3 +272,66 @@ async function generatePermlink(author, title) {
         return permlink;
     }
 }
+
+/**
+ * Busca os dados detalhados de uma conta.
+ * Usa blurt.api.getAccounts.
+ * @param {string} username - O nome de usuário.
+ * @returns {Promise<Object|null>} O objeto da conta ou null se não for encontrado.
+ */
+export async function getAccount(username) {
+    if (!username) return null;
+    
+    return new Promise((resolve, reject) => {
+        // blurt.api.getAccounts recebe um array de nomes de usuário
+        blurt.api.getAccounts([username], (err, result) => {
+            if (err) return reject(err);
+            
+            // Retorna o primeiro (e único) objeto da conta
+            if (result && result.length > 0) {
+                // O resultado contém todos os dados da conta (saldo, BP, created)
+                resolve(result[0]);
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+/**
+ * Busca posts/tópicos criados por um autor, usando o feed 'blog', com suporte à paginação.
+ * Usa blurt.api.getDiscussionsByBlog.
+ * @param {string} author - O autor dos posts.
+ * @param {number} limit - Número máximo de itens para buscar.
+ * @param {string|null} startAuthor - O autor do último post da lista anterior (para paginação).
+ * @param {string|null} startPermlink - O permlink do último post da lista anterior (para paginação).
+ * @returns {Promise<Array>} Um array de objetos post/discussão.
+ */
+export async function getPostsByAuthor(author, limit = 20, startAuthor = null, startPermlink = null) {
+    const query = {
+        tag: author, 
+        limit: limit,
+        // Adiciona os parâmetros de paginação
+        start_author: startAuthor || undefined, // undefined não envia o parâmetro se for null
+        start_permlink: startPermlink || undefined
+    };
+    
+    return new Promise((resolve, reject) => {
+        blurt.api.getDiscussionsByBlog(query, (err, result) => {
+            if (err) {
+                return reject(new Error(`API Error fetching blog for ${author}: ${err.message || JSON.stringify(err)}`));
+            }
+            // A API retorna 1 item duplicado (o post de partida) se start_author for usado. 
+            // Precisamos removê-lo.
+            if (startAuthor && result.length > 0) {
+                 // Se o primeiro item for o que usamos como ponto de partida, ele é duplicado (exceto na primeira chamada)
+                 if (result[0].author === startAuthor && result[0].permlink === startPermlink) {
+                     // Remove o duplicado e retorna o restante (os novos posts)
+                     return resolve(result.slice(1) || []);
+                 }
+            }
+            
+            resolve(result || []);
+        });
+    });
+}

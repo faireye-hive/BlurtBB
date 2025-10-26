@@ -8,7 +8,7 @@ import * as blockchain from './blockchain.js';
 // Importa o Poller para forçar a atualização após uma transação:
 import { currentRenderVotes, pollForEdit,startPostViewPoller } from './poller.js'; 
 // Importa utilitários necessários para submissão/erro:
-import { getDecryptedPostingKey, renderError } from './utils.js'; 
+import { getDecryptedPostingKey } from './utils.js'; 
 
 import { getEasyMDEInstance, setEasyMDEInstance, appContainer, handleRouteChange } from './app.js';
 

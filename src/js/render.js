@@ -30,6 +30,16 @@ import { setEasyMDEInstance, getEasyMDEInstance } from './app.js';
 // Variáveis DOM que a renderização pode precisar (ajuste conforme o seu código):
 const appContainer = document.getElementById('app'); 
 
+let profilePaginationState = {
+    author: null,
+    lastAuthor: null,
+    lastPermlink: null,
+    isLoading: false,
+    hasMore: true,
+    limit: 20,
+    postsContainerId: 'profile-posts-content-list'
+};
+
 function clearBreadcrumb() {
     const breadcrumbContainer = document.getElementById('breadcrumb-container');
     if (breadcrumbContainer) {
@@ -69,6 +79,72 @@ export async function renderMainView() {
         html += `</div></div>`;
     });
     appContainer.innerHTML = html;
+}
+
+/**
+ * Carrega posts adicionais para o perfil e anexa ao DOM.
+ * @param {boolean} isInitialLoad - Se for o primeiro carregamento, limpa o container.
+ */
+async function loadMoreProfilePosts(isInitialLoad = false) {
+    if (profilePaginationState.isLoading || (!profilePaginationState.hasMore && !isInitialLoad)) {
+        return; // Não faz nada se já estiver carregando ou se não houver mais posts
+    }
+    
+    profilePaginationState.isLoading = true;
+    
+    const loadMoreBtn = document.getElementById('load-more-profile-posts');
+    const postsContainer = document.getElementById(profilePaginationState.postsContainerId);
+    
+    if (loadMoreBtn) loadMoreBtn.disabled = true;
+
+    try {
+        // 1. Chamar a API com os parâmetros de paginação
+        const newPosts = await blockchain.getPostsByAuthor(
+            profilePaginationState.author, 
+            profilePaginationState.limit,
+            profilePaginationState.lastAuthor, 
+            profilePaginationState.lastPermlink
+        );
+
+        // 2. Anexar os posts
+        const newHtml = renderTopicsList(newPosts);
+        
+        if (isInitialLoad) {
+            // Se for o carregamento inicial, substitui o conteúdo
+            postsContainer.innerHTML = newHtml; 
+        } else {
+            // Se for 'load more', apenas adiciona
+            postsContainer.insertAdjacentHTML('beforeend', newHtml);
+        }
+
+        // 3. Atualizar o estado da paginação
+        if (newPosts.length < profilePaginationState.limit) {
+            profilePaginationState.hasMore = false;
+        }
+        
+        if (newPosts.length > 0) {
+            const lastPost = newPosts[newPosts.length - 1];
+            profilePaginationState.lastAuthor = lastPost.author;
+            profilePaginationState.lastPermlink = lastPost.permlink;
+        }
+
+    } catch (error) {
+        console.error("Failed to load more profile posts:", error);
+        // Deixe a mensagem de erro no topo, não no botão
+    } finally {
+        profilePaginationState.isLoading = false;
+        
+        // 4. Lógica do botão "Load More"
+        if (loadMoreBtn) {
+            if (profilePaginationState.hasMore) {
+                loadMoreBtn.disabled = false;
+                loadMoreBtn.textContent = 'Load More Topics';
+            } else {
+                loadMoreBtn.textContent = 'End of Feed';
+                loadMoreBtn.disabled = true;
+            }
+        }
+    }
 }
 
 // -------------------------------------------------------------------
@@ -326,8 +402,168 @@ export async function renderPostView(author, permlink) {
 // 4. VISUALIZAÇÃO DE PERFIL
 // -------------------------------------------------------------------
 export async function renderProfileView(username) {
-    // Copie o conteúdo da sua função renderProfileView
-    // ...
+    // 1. Limpeza e Loader
+    clearBreadcrumb();
+    stopPostViewPoller();
+    showLoader();
+    
+    // 2. Carregar dados do usuário e primeira página de posts
+    let account = null;
+    let initialPosts = [];
+    
+    try {
+        account = await blockchain.getAccount(username); 
+        // 🚨 Puxa 21 posts: 20 para exibir + 1 para a paginação
+        initialPosts = await blockchain.getPostsByAuthor(username, 21); 
+
+    } catch (error) {
+        hideLoader();
+        return renderError(`Could not load profile for @${username}. Error: ${error.message || 'Check RPC node or API call parameters.'}`);
+    }
+
+    if (!account) {
+        hideLoader();
+        return renderNotFound();
+    }
+    
+    // Configuração inicial da paginação
+    const postsToDisplay = initialPosts.slice(0, 20); // Exibe apenas os primeiros 20
+    const hasMore = initialPosts.length > 20;
+
+    profilePaginationState = {
+        author: username,
+        lastAuthor: hasMore ? postsToDisplay[postsToDisplay.length - 1].author : null,
+        lastPermlink: hasMore ? postsToDisplay[postsToDisplay.length - 1].permlink : null,
+        isLoading: false,
+        hasMore: hasMore,
+        limit: 20,
+        postsContainerId: 'profile-posts-content-list'
+    };
+    
+    // 3. Preparar dados
+    const avatarUrl = blockchain.getAvatarUrl(username);
+    const memberSince = new Date(account.created).toLocaleDateString();
+    
+    // 4. Breadcrumb
+    renderBreadcrumb([
+        { text: 'Home', href: '?' },
+        { text: `Profile: @${username}`, href: null }
+    ]);
+    
+    // 5. Montar o HTML do Perfil
+    let html = `
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card mb-3">
+                    <div class="card-body text-center">
+                        <img src="${avatarUrl}" alt="@${username}'s Avatar" class="rounded-circle mb-3" style="width: 100px; height: 100px; object-fit: cover;">
+                        <h4>@${username}</h4>
+                        <p class="text-muted">Member since ${memberSince}</p>
+                        <hr>
+                        <ul class="list-unstyled text-start small">
+                            <li><strong>BLURT Balance:</strong> ${account.balance}</li>
+                            <li><strong>Blurt Power:</strong> ${account.vesting_shares.split(' ')[0]} BP</li>
+                            <li><strong>Posts:</strong> ${postsToDisplay.length}${hasMore ? '+' : ''}</li> 
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-9">
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="profileTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="posts-tab" data-bs-toggle="tab" data-bs-target="#posts-content" type="button" role="tab" aria-controls="posts-content" aria-selected="true">Latest Posts</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="replies-tab" data-bs-toggle="tab" data-bs-target="#replies-content" type="button" role="tab" aria-controls="replies-content" aria-selected="false">Replies (Not Implemented)</button>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div class="card-body">
+                        <div class="tab-content" id="profileTabsContent">
+                            <div class="tab-pane fade show active" id="posts-content" role="tabpanel" aria-labelledby="posts-tab">
+                                <div id="profile-posts-content-list">
+                                    ${renderTopicsList(postsToDisplay)}
+                                </div>
+                                <div class="text-center mt-3">
+                                    <button id="load-more-profile-posts" class="btn btn-secondary btn-sm" ${!hasMore ? 'disabled' : ''}>
+                                        ${hasMore ? 'Load More Topics' : 'End of Feed'}
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="replies-content" role="tabpanel" aria-labelledby="replies-tab">
+                                <p class="text-muted">Replies functionality will be implemented soon.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.title = `@${username}'s Profile - ${CONFIG.forum_title}`;
+    appContainer.innerHTML = html;
+    hideLoader();
+    
+    // 6. Configurações Finais e Event Listeners
+    const loadMoreBtn = document.getElementById('load-more-profile-posts');
+    if (loadMoreBtn) {
+        // Adiciona o listener para o clique (para carregamentos subsequentes)
+        loadMoreBtn.addEventListener('click', () => loadMoreProfilePosts('profile-posts-content-list'));
+    }
+    
+    const tabEl = document.getElementById('profileTabs');
+    if (tabEl && window.bootstrap && window.bootstrap.Tab) {
+        // Inicializa as abas do Bootstrap se a biblioteca estiver carregada
+        new bootstrap.Tab(document.getElementById('posts-tab')).show();
+    }
+}
+
+/**
+ * Função auxiliar que renderiza a lista de tópicos (posts) para uma dada coleção.
+ * @param {Array<Object>} topics - Array de objetos post.
+ * @returns {string} HTML da lista de tópicos.
+ */
+function renderTopicsList(topics) {
+    if (!topics || topics.length === 0) {
+        return '<p class="text-muted">Nenhum tópico encontrado.</p>';
+    }
+
+    let html = `
+        <ul class="list-group list-group-flush">
+    `;
+
+    topics.forEach(topic => {
+        // Ignora replies; mostra apenas tópicos principais (parent_author é vazio ou igual ao autor)
+        if (topic.parent_author && topic.parent_author !== topic.author) {
+             return; 
+        }
+        
+        const repliesCount = topic.children; // Número de comentários
+        const lastUpdate = new Date(topic.last_update).toLocaleString();
+        const authorLink = `?profile=@${topic.author}`;
+
+        html += `
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <a href="?post=@${topic.author}/${topic.permlink}" class="fw-bold">${createSnippet(topic.title, 60)}</a>
+                    <div class="text-muted small">
+                        by <a href="${authorLink}">@${topic.author}</a> 
+                        • ${lastUpdate}
+                    </div>
+                </div>
+                <span class="badge bg-primary rounded-pill">${repliesCount} Replies</span>
+            </li>
+        `;
+    });
+
+    html += `
+        </ul>
+    `;
+    return html;
 }
 
 // -------------------------------------------------------------------
@@ -574,4 +810,17 @@ function renderBreadcrumb(items) {
     
     // 3. Injeta o HTML
     breadcrumbContainer.innerHTML = html;
+}
+
+export async function renderError(message) {
+    appContainer.innerHTML = `<div class="alert alert-danger">${message}</div><a href="/">Back to Home</a>`;
+    hideLoader();
+}
+
+export async function renderNotFound() {
+    appContainer.innerHTML = `
+        <div class="alert alert-danger"><strong>404 Not Found</strong><p>The page you requested could not be found.</p></div>
+        <a href="/">Back to Home</a>`;
+    document.title = `Not Found - ${CONFIG.forum_title}`;
+    hideLoader();
 }

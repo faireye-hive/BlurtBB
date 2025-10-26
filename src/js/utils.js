@@ -84,20 +84,6 @@ export function getRoleBadge(username) {
     return '';
 }
 
-
-export async function renderError(message) {
-    appContainer.innerHTML = `<div class="alert alert-danger">${message}</div><a href="/">Back to Home</a>`;
-    hideLoader();
-}
-
-export async function renderNotFound() {
-    appContainer.innerHTML = `
-        <div class="alert alert-danger"><strong>404 Not Found</strong><p>The page you requested could not be found.</p></div>
-        <a href="/">Back to Home</a>`;
-    document.title = `Not Found - ${CONFIG.forum_title}`;
-    hideLoader();
-}
-
 export function renderMarkdown(text) {
     if (!text) return '';
     
