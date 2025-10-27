@@ -348,7 +348,8 @@ function setupConfigModal() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    auth.restoreLoginState();
+    //auth.restoreLoginState();
+    auth.initAuth();
     settings.initSettings();
     blockchain.initBlockchain();
     applyTheme(settings.getSetting('THEME'));
@@ -356,7 +357,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await blacklist.initBlacklist();
     await beneficiaries.initBeneficiaries();
 
-    auth.initAuth();
     updateAuthUI();
     setupConfigModal();
     

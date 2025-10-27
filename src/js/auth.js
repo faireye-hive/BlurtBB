@@ -51,7 +51,6 @@ function decryptKey(encryptedText, masterPassword) {
     }
 }
 
-
 // --- Funções de Autenticação e Sessão ---
 
 /**
@@ -64,7 +63,7 @@ export function initAuth() {
     
     // 🚨 CORREÇÃO: Restaura o estado da chave/Keychain para a memória
     if (currentUser && encryptedKey) {
-        if (encryptedKey === KEYCHAIN_AUTH_MARKER) {
+        if (encryptedKey === 'blurt_posting_key_enc') {
             // Se o valor salvo for o marcador, RESTAURAMOS o estado de Keychain.
             currentUser = currentUser.toLowerCase();
             postingKey = KEYCHAIN_AUTH_MARKER;
@@ -74,8 +73,6 @@ export function initAuth() {
             encryptedKey = encryptedKey;
             postingKey = null; 
         } 
-        // Se a chave não for encontrada, o usuário permanece no estado 'logado' (via Keychain por username)
-        // mas as transações dependerão da Keychain instalada.
 }
 
 /**
@@ -88,7 +85,7 @@ export function initAuth() {
  */
 export async function login(username, key, masterPassword, keepLoggedIn) {
     if (!masterPassword) {
-        throw new Error("A Senha Mestra é necessária para criptografar a chave.");
+        throw new Error("A Senha PIN é necessária para criptografar a chave.");
     }
 
     try {
@@ -144,7 +141,7 @@ export async function login(username, key, masterPassword, keepLoggedIn) {
  */
 export function lockSession() {
     postingKey = null;
-    Toastify({ text: "Sessão bloqueada. A Senha Mestra será necessária para a próxima transação.", duration: 3000, backgroundColor: "orange" }).showToast();
+    Toastify({ text: "Sessão bloqueada. A Senha PIN será necessária para a próxima transação.", duration: 3000, backgroundColor: "orange" }).showToast();
 }
 
 /**
@@ -257,8 +254,9 @@ export async function loginWithKeychain(username) {
 
         localStorage.removeItem(ENCRYPTED_KEY_STORAGE_ID);
         sessionStorage.removeItem(ENCRYPTED_KEY_STORAGE_ID);
-        localStorage.setItem(USERNAME_STORAGE_ID, authenticatedUsername, KEYCHAIN_AUTH_MARKER);
-
+        localStorage.setItem(USERNAME_STORAGE_ID, authenticatedUsername);
+        localStorage.setItem(ENCRYPTED_KEY_STORAGE_ID, ENCRYPTED_KEY_STORAGE_ID);
+        
         // Resolve com sucesso
         resolve(authenticatedUsername);
 
@@ -277,17 +275,3 @@ export async function loginWithKeychain(username) {
 export function isKeychainUser() {
     return postingKey === KEYCHAIN_AUTH_MARKER;
 }
-
-export function restoreLoginState() {
-    const savedUser = localStorage.getItem(USERNAME_STORAGE_ID);
-    const KEYCHAIN_AUTH = localStorage.getItem(KEYCHAIN_AUTH_MARKER);
-
-    console.log("Restaurando estado de login...");
-    console.log(KEYCHAIN_AUTH);
-
-    if(savedUser){
-        currentUser = savedUser.toLowerCase();
-        postingKey = KEYCHAIN_AUTH_MARKER; 
-        console.log("Sessão Keychain restaurada para:", currentUser);}
-}
-
