@@ -433,3 +433,132 @@ export async function getCommentsByAuthor(author, limit = 20, startAuthor = null
     });
   });
 }
+
+/**
+ * Prepara o array de operações para um novo post (sem fazer o broadcast).
+ * Isso é usado principalmente pelo Blurt Keychain, que precisa do array de operações.
+ * @param {string} author - O nome de usuário do autor.
+ * @param {string} categoryId - A categoria do post.
+ * @param {string} title - O título do post.
+ * @param {string} body - O corpo do post (conteúdo).
+ * @returns {Array} O array de operações do Blurt ([['comment', {...}], ['comment_options', {...}]]).
+ */
+export function preparePostOperations(author, categoryId, title, body) {
+    const permlink = blurt.formatter.commentPermlink(author, title);
+    const parentPermlink = categoryId;
+    const parentAuthor = ''; // Post de nível superior
+    const jsonMetadata = JSON.stringify({
+        tags: [categoryId],
+        app: CONFIG.app_name, // Assumindo que CONFIG está disponível
+        version: CONFIG.app_version,
+    });
+
+    const commentOp = [
+        'comment',
+        {
+            parent_author: parentAuthor,
+            parent_permlink: parentPermlink,
+            author: author,
+            permlink: permlink,
+            title: title,
+            body: body,
+            json_metadata: jsonMetadata,
+        },
+    ];
+
+    const commentOptions = [
+        'comment_options',
+        {
+            author: author,
+            permlink: permlink,
+            max_accepted_payout: '1000000.000 BLURT', // Padrão, ajuste conforme necessário
+            percent_blurt_dollars: 10000, // 50% BLURT POWER, 50% BLURT. Ajuste se usar SBD ou apenas BLURT POWER.
+            allow_votes: true,
+            allow_curation_rewards: true,
+            extensions: [
+                // Adicione a extensão de beneficiários se necessário (Seu código já deve ter isso)
+            ],
+        },
+    ];
+
+    // O finalPermlink é retornado aqui para a função pollForPost
+    commentOp.finalPermlink = permlink;
+
+    return [commentOp, commentOptions];
+}
+
+export function prepareReplyOperations(author, parentAuthor, parentPermlink, body) {
+    // Permlink da resposta: único para cada comentário no post
+    const permlink = blurt.formatter.commentPermlink(author, parentPermlink); 
+    const title = ''; 
+    const jsonMetadata = JSON.stringify({
+        // Inclua tags, app, etc., se necessário para a sua lógica de metadados
+        app: 'blurtbb-app',
+    });
+
+    const commentOp = [
+        'comment',
+        {
+            parent_author: parentAuthor,
+            parent_permlink: parentPermlink,
+            author: author,
+            permlink: permlink,
+            title: title, // Título vazio para comentários
+            body: body,
+            json_metadata: jsonMetadata,
+        },
+    ];
+
+    // Para comentários, a operação 'comment' é suficiente. 
+    // Se você precisar de opções avançadas (ex: beneficiários), adicione 'comment_options' aqui.
+    return [commentOp];
+}
+
+export function prepareEditOperations(originalPost, newTitle, newBody) {
+    // 1. O permlink e o autor devem ser os mesmos
+    const author = originalPost.author;
+    const permlink = originalPost.permlink;
+    const parentAuthor = originalPost.parent_author;
+    const parentPermlink = originalPost.parent_permlink;
+    
+    // 2. Os metadados devem ser mantidos ou recriados
+    // Se o post original tiver json_metadata, você deve carregá-lo e atualizá-lo.
+    let jsonMetadata = {};
+    try {
+        jsonMetadata = JSON.parse(originalPost.json_metadata);
+        // Atualiza a timestamp de edição, se o seu app fizer isso
+        jsonMetadata.app = CONFIG.app_name; 
+    } catch (e) {
+        // Se houver um erro ao analisar, cria um metadado básico
+        jsonMetadata = { app: CONFIG.app_name };
+    }
+    
+    // 3. Cria a operação 'comment' com os novos dados
+    const commentOp = [
+        'comment',
+        {
+            parent_author: parentAuthor,
+            parent_permlink: parentPermlink,
+            author: author,
+            permlink: permlink,
+            title: newTitle,
+            body: newBody,
+            json_metadata: JSON.stringify(jsonMetadata),
+        },
+    ];
+
+    // Para edições, normalmente você só precisa da operação 'comment'
+    return [commentOp];
+}
+
+export function prepareDeleteOperations(author, permlink) {
+    const deleteOp = [
+        'delete_comment',
+        {
+            author: author,
+            permlink: permlink,
+        },
+    ];
+
+    return [deleteOp];
+}

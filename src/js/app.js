@@ -23,6 +23,10 @@ const authContainer = document.getElementById('auth-container');
 const loginModalElement = document.getElementById('loginModal');
 const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
+const usernameInput = document.getElementById('username'); // O input de usuário
+
+// 🚨 NOVO ELEMENTO DOM: O botão que você precisa adicionar no seu HTML
+const keychainLoginBtn = document.getElementById('keychain-login-btn');
 
 let easyMDEInstance = null; // ⬅️ Variavel privada do módulo
 
@@ -37,6 +41,48 @@ export function getEasyMDEInstance() {
     return easyMDEInstance;
 }
 
+async function handleKeychainLogin(e) {
+    e.preventDefault();
+    const btn = e.target;
+    
+    // 🚨 PASSO 1: OBTÉM O NOME DE USUÁRIO
+    const username = usernameInput.value.trim().toLowerCase();
+    
+    if (!username) {
+        // Exibe erro se o campo estiver vazio
+        loginError.textContent = "Por favor, digite seu nome de usuário antes de usar o Keychain.";
+        loginError.classList.remove('d-none');
+        return; 
+    }
+    
+    // Reset de estado e desabilitação do botão
+    btn.disabled = true;
+    loginError.textContent = ''; 
+    loginError.classList.add('d-none'); // Esconde a mensagem de erro
+
+    try {
+        // 🚨 PASSO 2: CHAMA A FUNÇÃO PASSANDO O USERNAME OBRIGATÓRIO
+        const loggedInUsername = await auth.loginWithKeychain(username);
+        
+        // 1. Fecha o Modal de Login
+        const loginModal = bootstrap.Modal.getInstance(loginModalElement);
+        if (loginModal) loginModal.hide();
+        
+        // 2. Atualiza o estado da UI
+        // Use loggedInUsername, embora deva ser igual ao 'username'
+        updateAuthUI(loggedInUsername); 
+        
+        // 3. Força o carregamento da página 
+        handleRouteChange(); 
+        
+    } catch (error) {
+        // Lógica de erro
+        console.error("Keychain Login Failed:", error);
+        loginError.textContent = error.message || "Falha ao se conectar com o Keychain. Verifique se o usuário está logado na extensão.";
+        loginError.classList.remove('d-none'); // Mostra a mensagem de erro
+        btn.disabled = false;
+    }
+}
 
 /**
  * Funções auxiliares para lidar com o fluxo de Senha Mestra.
@@ -302,6 +348,7 @@ function setupConfigModal() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    auth.restoreLoginState();
     settings.initSettings();
     blockchain.initBlockchain();
     applyTheme(settings.getSetting('THEME'));
@@ -314,6 +361,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupConfigModal();
     
     loginForm.addEventListener('submit', handleLogin);
+
+    // 🚨 NOVO LISTENER PARA O BOTÃO KEYCHAIN
+    if (keychainLoginBtn) {
+        keychainLoginBtn.addEventListener('click', handleKeychainLogin);
+    }
+
+    // Pega o usuário restaurado (agora não será null, se a sessão existe)
+    const user = auth.getCurrentUser();
+    
+    // Se a sessão foi restaurada, atualiza a UI
+    if (user) {
+        updateAuthUI(user); // Sua função para atualizar o cabeçalho/botões
+    }
 
     document.body.addEventListener('click', e => {
         if (!e.target.closest('[data-bs-toggle="popover"]') && !e.target.closest('.popover')) {

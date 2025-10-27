@@ -66,41 +66,49 @@
         </div>
     </footer>
 
-    <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="loginModalLabel">Login with Blurt</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="login-error" class="alert alert-danger d-none"></div>
-                    <form id="login-form">
-                        <div class="mb-3">
-                            <label for="username" class="form-label">Blurt Username</label>
-                            <input type="text" class="form-control" id="username" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="postingKey" class="form-label">Private Posting Key</label>
-                            <input type="password" class="form-control" id="postingKey" required>
-                            <div class="form-text">Your key is used only in your browser to sign transactions.</div>
-                        </div>
-                        <hr>
-                        <div class="mb-3">
-                            <label for="masterPassword" class="form-label">Master Password (Encryption)</label>
-                            <input type="password" class="form-control" id="masterPassword" required>
-                            <div class="form-text text-danger">This new password will be used to encrypt your key. Do not forget it!</div>
-                        </div>
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="keepLoggedIn" checked>
-                            <label class="form-check-label" for="keepLoggedIn">Keep me logged in (key is stored encrypted)</label>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Login & Encrypt</button>
-                    </form>
-                </div>
+   <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="loginModalLabel">Login with Blurt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
+            <div class="modal-body">
+                <div id="login-error" class="alert alert-danger d-none"></div>
+                <form id="login-form">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Blurt Username</label>
+                        <input type="text" class="form-control" id="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="postingKey" class="form-label">Private Posting Key</label>
+                        <input type="password" class="form-control" id="postingKey" required>
+                        <div class="form-text">Your key is used only in your browser to sign transactions.</div>
+                    </div>
+                    <hr>
+                    <div class="mb-3">
+                        <label for="masterPassword" class="form-label">Master Password (Encryption)</label>
+                        <input type="password" class="form-control" id="masterPassword" required>
+                        <div class="form-text text-danger">This new password will be used to encrypt your key. Do not forget it!</div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="keepLoggedIn" checked>
+                        <label class="form-check-label" for="keepLoggedIn">Keep me logged in (key is stored encrypted)</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Login & Encrypt</button>
+                </form>
+
+                <div class="text-center my-3">
+                    <hr>
+                    <p class="text-muted">ou</p>
+                    <button type="button" class="btn btn-outline-primary w-100" id="keychain-login-btn">
+                        Login com Blurt Keychain
+                    </button>
+                </div>
+                </div>
         </div>
     </div>
+</div>
 
     <div class="modal fade" id="newPostModal" tabindex="-1" aria-labelledby="newPostModalLabel" aria-hidden="true">
         <div class="modal-dialog">

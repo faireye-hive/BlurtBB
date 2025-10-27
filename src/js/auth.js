@@ -12,6 +12,9 @@ let encryptedKey = null;
 const ENCRYPTED_KEY_STORAGE_ID = 'blurt_posting_key_enc';
 const USERNAME_STORAGE_ID = 'blurt_user';
 
+const KEYCHAIN_AUTH_MARKER = 'KEYCHAIN_AUTH_MARKER_FOR_POSTING_KEY';
+
+
 
 // --- Funções de Criptografia ---
 
@@ -58,9 +61,21 @@ function decryptKey(encryptedText, masterPassword) {
 export function initAuth() {
     currentUser = localStorage.getItem(USERNAME_STORAGE_ID) || sessionStorage.getItem(USERNAME_STORAGE_ID);
     encryptedKey = localStorage.getItem(ENCRYPTED_KEY_STORAGE_ID) || sessionStorage.getItem(ENCRYPTED_KEY_STORAGE_ID);
-
-    // IMPORTANTE: A chave descriptografada 'postingKey' NÃO é carregada aqui.
-    // A sessão começa BLOQUEADA (postingKey = null) para maior segurança.
+    
+    // 🚨 CORREÇÃO: Restaura o estado da chave/Keychain para a memória
+    if (currentUser && encryptedKey) {
+        if (encryptedKey === KEYCHAIN_AUTH_MARKER) {
+            // Se o valor salvo for o marcador, RESTAURAMOS o estado de Keychain.
+            currentUser = currentUser.toLowerCase();
+            postingKey = KEYCHAIN_AUTH_MARKER;
+        }
+        } else if (encryptedKey) {
+            // Sessão Chave Mestra: A chave criptografada é restaurada, mas a sessão está 'bloqueada'
+            encryptedKey = encryptedKey;
+            postingKey = null; 
+        } 
+        // Se a chave não for encontrada, o usuário permanece no estado 'logado' (via Keychain por username)
+        // mas as transações dependerão da Keychain instalada.
 }
 
 /**
@@ -192,3 +207,87 @@ export function getPostingKey() {
 export function isSessionLocked() {
     return currentUser && encryptedKey && !postingKey;
 }
+
+function getAvailableKeychain() {
+    if (window.hive_keychain) {
+        return window.hive_keychain;
+    }
+    if (window.blurt_keychain) {
+        return window.blurt_keychain;
+    }
+    return null;
+}
+
+/**
+ * Tenta fazer login usando o Hive/Blurt Keychain via requestSignBuffer.
+ * @returns {Promise<string>} O nome de usuário logado.
+ * @throws {Error} Se o Keychain não estiver instalado ou o login falhar.
+ */
+export async function loginWithKeychain(username) {
+  const keychain = window.blurt_keychain;
+
+  if (!keychain) {
+    return Promise.reject(new Error("Hive/Blurt Keychain não está instalado."));
+  }
+  if (!username) {
+    return Promise.reject(new Error("Nome de usuário não fornecido."));
+  }
+
+  const loginChallenge = `blurtbb_login_${Date.now()}`;
+
+  return new Promise((resolve, reject) => {
+    keychain.requestSignBuffer(username, loginChallenge, 'Posting', (response) => {
+      console.log("Keychain login response:", response);
+
+      if (response.success) {
+        // Alguns retornam username direto, outros não
+        const authenticatedUsername = (response.username || username).toLowerCase();
+
+        // Verificação extra de segurança
+        if (authenticatedUsername !== username.toLowerCase()) {
+          return reject(new Error(
+            `Usuário autenticado (${authenticatedUsername}) não corresponde ao digitado (${username}).`
+          ));
+        }
+
+        // Atualiza estado (certifique-se de declarar essas variáveis antes)
+        currentUser = authenticatedUsername;
+        postingKey = KEYCHAIN_AUTH_MARKER;
+        encryptedKey = null;
+
+        localStorage.removeItem(ENCRYPTED_KEY_STORAGE_ID);
+        sessionStorage.removeItem(ENCRYPTED_KEY_STORAGE_ID);
+        localStorage.setItem(USERNAME_STORAGE_ID, authenticatedUsername, KEYCHAIN_AUTH_MARKER);
+
+        // Resolve com sucesso
+        resolve(authenticatedUsername);
+
+      } else {
+        // Quando o usuário cancela, ou outra falha real
+        reject(new Error(`Login Keychain falhou: ${response.message || 'Cancelado ou erro desconhecido.'}`));
+      }
+    });
+  });
+}
+// 🚨 NOVA FUNÇÃO DE UTILIDADE (Crucial para o resto do app)
+/**
+ * Verifica se o usuário está logado, mas a chave de postagem está sendo gerenciada pelo Keychain.
+ * @returns {boolean}
+ */
+export function isKeychainUser() {
+    return postingKey === KEYCHAIN_AUTH_MARKER;
+}
+
+export function restoreLoginState() {
+    const savedUser = localStorage.getItem(USERNAME_STORAGE_ID);
+    const KEYCHAIN_AUTH = localStorage.getItem(KEYCHAIN_AUTH_MARKER);
+
+    console.log("Restaurando estado de login...");
+    console.log(KEYCHAIN_AUTH);
+
+    if(savedUser){
+        currentUser = savedUser.toLowerCase();
+        postingKey = KEYCHAIN_AUTH_MARKER; 
+        console.log("Sessão Keychain restaurada para:", currentUser);}
+}
+
