@@ -39,6 +39,7 @@ function clearBreadcrumb() {
 }
 
 const POSTS_PER_PAGE = 20; // Defina a quantidade de posts por página.
+const REPLIES_PER_PAGE = 20;
 
 // Estado para armazenar todos os posts de um usuário e a página atual.
 let profileState = {
@@ -50,10 +51,15 @@ let profileState = {
     currentCommentPage: 1  // 🚨 Nova variável de estado para a página de comentários
 };
 
-// -------------------------------------------------------------------
-// FUNÇÕES DE TEMPLATE (Se houver, é bom movê-las para utils.js ou templates.js)
-// Por enquanto, assumimos que estão dentro das funções de renderização.
-// -------------------------------------------------------------------
+export const postViewState = {
+    author: null,
+    permlink: null,
+    avatar: [],
+    posts: null,
+    allReplies: [],   // Todos os replies carregados
+    contentMap: {},   // Mapa para buscar "pais" para citações
+    currentReplyPage: 1 // A página de replies que estamos vendo
+};
 
 // -------------------------------------------------------------------
 // 1. ROTA PRINCIPAL (Home)
@@ -83,7 +89,6 @@ export async function renderMainView() {
     });
     appContainer.innerHTML = html;
 }
-
 
 // -------------------------------------------------------------------
 // 2. VISUALIZAÇÃO DE TÓPICOS/CATEGORIA
@@ -197,41 +202,52 @@ export async function renderCategoryView(categoryId) {
 // -------------------------------------------------------------------
 export async function renderPostView(author, permlink) {
     showLoader();
+    stopPostViewPoller(); // Adicionado para parar pollers de visualizações anteriores
+    clearBreadcrumb(); // Adicionado para limpar o breadcrumb
+
     if (blacklist.isBlacklisted(author, permlink)) {
         renderError("This content is unavailable because the author or post is blacklisted.");
         return;
     }
-    const post = await blockchain.getPostWithReplies(author, permlink);
-
-// O campo 'category' do post pode ser a tag completa (ex: 'fdsfdsf-off-topic').
-    const rawCategory = post.category || CONFIG.main_tag;
     
-    // 🚨 CORREÇÃO AQUI: Limpa o ID da categoria, removendo o prefixo
-    let categoryId = rawCategory.startsWith(CONFIG.tag_prefix)
-        ? rawCategory.substring(CONFIG.tag_prefix.length) // Remove 'fdsfdsf-'
-        : rawCategory;
-        
-    // Se o ID for a tag principal, ela pode não estar na lista de categorias (se for só o tag do fórum)
-    if (categoryId === CONFIG.main_tag) {
-        categoryId = 'general'; // OU o ID de categoria que você quer como default
+    // 1. Obtém a página de replies da URL
+    const params = new URLSearchParams(window.location.search);
+    const replyPage = parseInt(params.get('reply_page')) || 1;
+
+    let post;
+
+    if(author === postViewState.author && permlink === postViewState.permlink) {
+        post = postViewState.posts;
     }
+    else{
+        post = await blockchain.getPostWithReplies(author, permlink);
+        postViewState.posts = post;
+    }
+    // 2. CHAMA A API UMA ÚNICA VEZ
 
 
+    console.log('Post carregado para visualização:');
+    console.log(post);
+
+    // ... (Sua lógica de categoria e breadcrumb - Está correta) ...
+    const rawCategory = post.category || CONFIG.main_tag;
+    let categoryId = rawCategory.startsWith(CONFIG.tag_prefix)
+        ? rawCategory.substring(CONFIG.tag_prefix.length) 
+        : rawCategory;
+    if (categoryId === CONFIG.main_tag) {
+        categoryId = 'general'; 
+    }
     const categories = getAllCategories();
     let category = categories.find(c => c.id === categoryId);
-    
-    // Fallback caso a categoria não seja encontrada ou seja a tag principal que não está na lista
     if (!category) {
-        // Cria um objeto temporário para garantir que o breadcrumb funcione.
         category = { id: categoryId, title: categoryId.toUpperCase() }; 
     }
-    
-    // 🚨 ATENÇÃO: Chame o Breadcrumb com a variável 'category' corrigida
     renderBreadcrumb([
         { text: 'Home', href: '?' },
-        { text: category.title, href: `?category=${category.id}` }, // Link para a categoria
-        { text: createSnippet(post.title, 50), href: null } // Título truncado, sem link
+        { text: category.title, href: `?category=${category.id}` },
+        { text: createSnippet(post.title, 50), href: null } 
     ]);
+    // ... (Fim da lógica do breadcrumb) ...
 
     if (!post || !post.author) { renderNotFound(); return; }
 
@@ -239,8 +255,17 @@ export async function renderPostView(author, permlink) {
     const user = auth.getCurrentUser();
     const postAuthorAvatarUrl = blockchain.getAvatarUrl(post.author);
 
-    const { allReplies, contentMap } = processPostTree(post); // Usa a função exportada
+    const { allReplies, contentMap } = processPostTree(post); // Processa todos os replies
 
+    // 3. SALVA TODOS OS REPLIES NO ESTADO GLOBAL
+    postViewState.author = author;
+    postViewState.permlink = permlink;
+    // Ordena os replies (mais antigos primeiro, padrão de fórum)
+    postViewState.allReplies = allReplies.sort((a, b) => new Date(a.created) - new Date(b.created)); 
+    postViewState.contentMap = contentMap;
+    postViewState.currentReplyPage = replyPage;
+
+    // 4. RENDERIZA O HTML DO POST PRINCIPAL (NÃO FOI APAGADO)
     let html = `
         <div class="card mb-3">
             <div class="card-body">
@@ -265,96 +290,63 @@ export async function renderPostView(author, permlink) {
                 </div>
             </div>
         </div>
-        <h3>Replies</h3>`;
-
-    if (allReplies.length > 0) {
-        html += '<div class="list-group">';
-        allReplies.forEach(reply => {
-            const replyAvatarUrl = blockchain.getAvatarUrl(reply.author);
-            let quoteHtml = '';
-            const parentKey = `@${reply.parent_author}/${reply.parent_permlink}`;
-            const parent = contentMap[parentKey];
-            if (parent) {
-                const parentBody = parent.body.substring(0, 100) + (parent.body.length > 100 ? '...' : '');
-                quoteHtml = `<blockquote class="blockquote-footer bg-light p-2 rounded-top"><a href="#${parentKey}">@${reply.parent_author}</a> wrote:<p class="mb-0 fst-italic">${parentBody}</p></blockquote>`;
-            }
-
-            html += `
-                <div id="${parentKey}" class="list-group-item mt-3">
-                    <div class="row">
-                        <div class="col-md-3 text-center border-end">
-                            <a href="?profile=${reply.author}"><img src="${replyAvatarUrl}" alt="${reply.author}" class="rounded-circle mb-2" width="40" height="40"><h6 class="mb-0">@${reply.author}</h6></a>
-                            ${getRoleBadge(reply.author)}
-                            <small class="text-muted d-block mt-2">${formatLocalTime(reply.created)}</small>
-                        </div>
-                        <div class="col-md-9">
-                            ${quoteHtml}
-                            <div class="mb-2 card-text main-post-text">${renderMarkdown(reply.body)}</div>
-                            <div class="d-flex align-items-center justify-content-between mt-2">
-                                <div class="d-flex align-items-center vote-section" data-author="${reply.author}" data-permlink="${reply.permlink}"></div>
-                                <div>
-                                    ${user ? `<button class="btn btn-sm btn-link text-secondary reply-to-btn" data-author="${reply.author}" data-permlink="${reply.permlink}">Reply</button>` : ''}
-                                    ${user === reply.author ? `<a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary">Edit</a><button class="btn btn-sm btn-link text-danger delete-reply-btn" data-permlink="${reply.permlink}">Delete</button>` : ''}
-                                </div>
-                            </div>
-                            <div class="reply-form-container mt-3"></div>
-                        </div>
-                    </div>
-                </div>`;
-        });
-        html += '</div>';
-    } else {
-        html += '<p>No replies yet.</p>';
-    }
-
-    //console.log(html);
+        
+        <h3>Replies (${allReplies.length})</h3>
+        <div id="post-replies-container" class="mt-4"></div>
+        <div id="post-replies-pagination" class="d-flex justify-content-center mt-3"></div>
+        `;
+        
+    // (O loop 'allReplies.forEach' foi REMOVIDO daqui)
 
     appContainer.innerHTML = html;
 
+    // 6. CHAMA AS FUNÇÕES DE PAGINAÇÃO (QUE USAM O ESTADO, SEM API)
+    renderCurrentReplyPage(); // Renderiza a página de replies atual (ex: 1-20)
+    renderReplyPagination();  // Renderiza os botões (ex: 1, 2, 3...)
+    
+    // (Opcional: Renderiza os votos imediatamente, se a função existir)
+    if (typeof renderContentVotes === 'function') {
+        const repliesOnPage = allReplies.slice((replyPage - 1) * REPLIES_PER_PAGE, replyPage * REPLIES_PER_PAGE);
+        renderContentVotes([post, ...repliesOnPage]);
+    }
+
+    // 7. CORRIGE OS EVENT LISTENERS USANDO DELEGAÇÃO
     if (user) {
         const deletePostBtn = document.getElementById('delete-post-btn');
         if (deletePostBtn) deletePostBtn.addEventListener('click', (e) => handleDeleteClick(e, post.author, post.permlink));
-        document.querySelectorAll('.delete-reply-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => handleDeleteClick(e, user, e.target.dataset.permlink));
-        });
+        
+        // Remove 'document.querySelectorAll('.delete-reply-btn')' que não funciona com paginação.
+        
+        // Usa DELEGAÇÃO DE EVENTO no appContainer.
+        // Isso funciona para replies que são carregados dinamicamente na paginação.
         appContainer.addEventListener('click', function(e) {
             const voteBtn = e.target.closest('.vote-btn');
             if (voteBtn) {
-                // ✅ Correto: Chama a função passando o objeto de evento 'e'
                 handleVoteClick(e);
             }
+            
             const replyBtn = e.target.closest('.reply-to-btn');
             if (replyBtn) {
                 const { author, permlink } = replyBtn.dataset;
                 const formContainer = replyBtn.closest('.col-md-9').querySelector('.reply-form-container');
                 renderReplyForm(author, permlink, formContainer);
             }
+
+            // Adiciona o handler de delete de reply aqui
+            const deleteReplyBtn = e.target.closest('.delete-reply-btn');
+            if (deleteReplyBtn) {
+                 handleDeleteClick(e, user, deleteReplyBtn.dataset.permlink);
+            }
         });
     }
 
-    //startPostViewPoller(author, permlink,post);
+    startPostViewPoller(author, permlink,post);
     hideLoader();
     return post;
 }
 // -------------------------------------------------------------------
 // 4. VISUALIZAÇÃO DE PERFIL
 // -------------------------------------------------------------------
-/**
- * [MUDANÇAS CHAVE PARA CARREGAMENTO RÁPIDO DO PERFIL]
- * * 1. PADRÃO SHELL RENDERING: A função agora é dividida em duas fases para evitar a tela branca:
- * - FASE 1 (RÁPIDA): Apenas espera por `blockchain.getAccount(username)` e renderiza
- * IMEDIATAMENTE a estrutura básica do perfil (header, abas) no appContainer.
- * - FASE 2 (LENTA/ASSÍNCRONA): A nova função `loadProfileContent(username)` é chamada 
- * SEM 'await', permitindo que a busca pesada (`getAllPosts`, `getAllComments`) 
- * ocorra em segundo plano. Ela injeta o Loader e, depois, os posts/comentários.
- * * 2. REINICIALIZAÇÃO DE ESTADO (CORREÇÃO DE BUG):
- * - Se o 'username' for diferente do `profileState.author` anterior, o `profileState`
- * (posts e comentários) é zerado ANTES de renderizar o HTML. Isso garante que:
- * a) O novo perfil não mostre dados do usuário antigo.
- * b) O Shell renderize corretamente os Loaders internos (já que os arrays estão vazios).
- * * 3. REMOÇÃO DOS 'AWAITS' LENTOS: As chamadas `await blockchain.getAll...` foram movidas
- * para dentro de `loadProfileContent` para não bloquear a renderização inicial.
- */
 export async function renderProfileView(username) {
     // 1. Limpeza e Loader Principal
     clearBreadcrumb();
@@ -533,7 +525,6 @@ function renderTopicsList(topics) {
 // -------------------------------------------------------------------
 // 5. VISUALIZAÇÃO DE EDIÇÃO E NOVO TÓPICO
 // -------------------------------------------------------------------
-// Local: js/modules/render(2).js (ou render.js)
 
 export async function renderNewTopicForm(categoryId) {
     // 1. LIMPEZA E INFORMAÇÕES BÁSICAS (Sem alterações aqui)
@@ -606,7 +597,6 @@ export async function renderNewTopicForm(categoryId) {
     document.getElementById('new-topic-form').addEventListener('submit', (e) => handlePostSubmit(e, fullDraftKey));
 }
 
-// Local: js/modules/render(2).js (ou render.js)
 
 export async function renderEditView(author, permlink) {
     // 1. PREPARAÇÃO E LIMPEZA
@@ -789,9 +779,42 @@ export async function renderNotFound() {
     hideLoader();
 }
 
+/**
+ * Renderiza os posts para a página atual e atualiza os controles de paginação.
+ */
+function renderProfilePosts() {
+    const { allProfilePosts, currentPostPage } = profileState;
+    const postsContainer = document.getElementById('profile-posts-content-list');
+    const paginationContainer = document.getElementById('profile-pagination-controls');
 
-// js/modules/render.js (Novas funções auxiliares)
+    if (!postsContainer) return;
 
+    if (allProfilePosts.length === 0) {
+        postsContainer.innerHTML = '<p class="text-muted text-center">Nenhum post encontrado.</p>';
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
+
+    // 1. Calcular o fatiamento (slice) para a página atual
+    const startIndex = (currentPostPage - 1) * POSTS_PER_PAGE;
+    const endIndex = startIndex + POSTS_PER_PAGE;
+    const postsToDisplay = allProfilePosts.slice(startIndex, endIndex);
+
+    // 2. Renderizar os posts
+    // 🚨 ATENÇÃO: Verifique se 'renderTopicsList' existe e está sendo importado/definido
+    postsContainer.innerHTML = renderTopicsList(postsToDisplay); 
+
+    // 3. Renderizar e anexar os controles de paginação
+    if (paginationContainer) {
+        paginationContainer.innerHTML = renderPaginationControls(
+            allProfilePosts.length,
+            currentPostPage
+        );
+    }
+    
+    // Rola para o topo do feed (boa UX)
+    postsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 /**
  * Gera o HTML dos controles de paginação numérica.
  */
@@ -875,45 +898,6 @@ function handlePaginationClick(e) {
 }
 
 /**
- * Renderiza os posts para a página atual e atualiza os controles de paginação.
- */
-function renderProfilePosts() {
-    const { allProfilePosts, currentPostPage } = profileState;
-    const postsContainer = document.getElementById('profile-posts-content-list');
-    const paginationContainer = document.getElementById('profile-pagination-controls');
-
-    if (!postsContainer) return;
-
-    if (allProfilePosts.length === 0) {
-        postsContainer.innerHTML = '<p class="text-muted text-center">Nenhum post encontrado.</p>';
-        if (paginationContainer) paginationContainer.innerHTML = '';
-        return;
-    }
-
-    // 1. Calcular o fatiamento (slice) para a página atual
-    const startIndex = (currentPostPage - 1) * POSTS_PER_PAGE;
-    const endIndex = startIndex + POSTS_PER_PAGE;
-    const postsToDisplay = allProfilePosts.slice(startIndex, endIndex);
-
-    // 2. Renderizar os posts
-    // 🚨 ATENÇÃO: Verifique se 'renderTopicsList' existe e está sendo importado/definido
-    postsContainer.innerHTML = renderTopicsList(postsToDisplay); 
-
-    // 3. Renderizar e anexar os controles de paginação
-    if (paginationContainer) {
-        paginationContainer.innerHTML = renderPaginationControls(
-            allProfilePosts.length,
-            currentPostPage
-        );
-    }
-    
-    // Rola para o topo do feed (boa UX)
-    postsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// js/modules/render.js (Nova Função)
-
-/**
  * Renderiza os comentários (Replies) para a página atual e atualiza os controles de paginação.
  */
 function renderProfileComments() {
@@ -964,26 +948,9 @@ console.log('Comentários Exibidos:', commentsToDisplay.length);
     commentsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-
 /**
  * Lida com o clique nos botões de paginação DA ABA DE COMENTÁRIOS.
  */
-function handleCommentPaginationClick(e) {
-    e.preventDefault();
-    const link = e.target.closest('.page-nav-link');
-    
-    if (!link || link.parentElement.classList.contains('disabled')) {
-        return; 
-    }
-    
-    const newPage = parseInt(link.dataset.page);
-    const totalPages = Math.ceil(profileState.allProfileComments.length / POSTS_PER_PAGE);
-
-    if (newPage >= 1 && newPage <= totalPages) {
-        profileState.currentCommentPage = newPage;
-        renderProfileComments(); // Redesenha a página com o novo conteúdo
-    }
-}
 
 function renderCommentList(comments) {
     if (!comments || comments.length === 0) return '';
@@ -1071,11 +1038,22 @@ function renderCommentList(comments) {
         `;
     }).join('');
 }
+function handleCommentPaginationClick(e) {
+    e.preventDefault();
+    const link = e.target.closest('.page-nav-link');
+    
+    if (!link || link.parentElement.classList.contains('disabled')) {
+        return; 
+    }
+    
+    const newPage = parseInt(link.dataset.page);
+    const totalPages = Math.ceil(profileState.allProfileComments.length / POSTS_PER_PAGE);
 
-
-// render.js
-
-// ...
+    if (newPage >= 1 && newPage <= totalPages) {
+        profileState.currentCommentPage = newPage;
+        renderProfileComments(); // Redesenha a página com o novo conteúdo
+    }
+}
 
 /**
  * Cria a estrutura HTML básica (Shell) do perfil com placeholders de conteúdo.
@@ -1124,12 +1102,6 @@ function createProfileShellHtml(profileData) {
         </div>
     `;
 }
-
-// render.js
-
-// render.js
-
-// ... (Mantenha as importações e variáveis de estado como profileState)
 
 /**
  * Carrega posts e comentários de forma assíncrona (em segundo plano) e injeta no DOM.
@@ -1180,4 +1152,162 @@ async function loadProfileContent(username) {
         if (postsContainer) postsContainer.innerHTML = '<p class="alert alert-danger">Erro ao carregar posts.</p>';
         if (commentsContainer) commentsContainer.innerHTML = '<p class="alert alert-danger">Erro ao carregar comentários.</p>';
     }
+}
+
+/**
+ * Lida com o clique nos botões de paginação dos REPLIES.
+ * (Esta é a sua "handlePaginationClick" com outro nome)
+ */
+function handleReplyPaginationClick(e) {
+    e.preventDefault();
+    // Usamos 'reply-page-link' para diferenciar dos links de paginação do perfil
+    const pageLink = e.target.closest('.reply-page-link'); 
+    
+    // Ignora cliques em links desabilitados (página atual, "anterior" na pág 1)
+    if (!pageLink || pageLink.parentElement.classList.contains('disabled') || pageLink.parentElement.classList.contains('active')) {
+        return;
+    }
+
+    const page = parseInt(pageLink.dataset.page);
+    if (isNaN(page)) return;
+
+    // 1. Atualiza o estado
+    postViewState.currentReplyPage = page;
+
+    // 2. Atualiza a URL
+    history.pushState({}, '', `?post=@${postViewState.author}/${postViewState.permlink}&reply_page=${page}`);
+
+    // 3. Re-renderiza os replies e os botões
+    renderCurrentReplyPage();
+    renderReplyPagination();
+
+    // 4. Scroll para o topo dos replies
+    document.getElementById('post-replies-container').scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * Renderiza os controles de paginação (botões 1, 2, 3...) para os REPLIES.
+ * (Esta é a sua "renderPaginationControls" com outro nome)
+ */
+function renderReplyPagination() {
+    const container = document.getElementById('post-replies-pagination');
+    if (!container) return;
+
+    const totalReplies = postViewState.allReplies.length;
+    const currentPage = postViewState.currentReplyPage;
+    const totalPages = Math.ceil(totalReplies / REPLIES_PER_PAGE);
+
+    if (totalPages <= 1) {
+        container.innerHTML = ''; // Sem paginação se houver 1 página ou menos
+        return;
+    }
+
+    let html = '<ul class="pagination pagination-sm">';
+
+    // Lógica dos botões (Anterior, Próximo, Números)
+    const pageLinkClass = "page-link reply-page-link"; // Classe única
+
+    // Botão Anterior
+    html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                <a class="${pageLinkClass}" href="#" data-page="${currentPage - 1}" aria-label="Previous">&laquo;</a>
+             </li>`;
+
+    // Lógica para mostrar 5 números de página (ex: 1, 2, 3, 4, 5 ou 3, 4, 5, 6, 7)
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+
+    if (currentPage <= 3) {
+        endPage = Math.min(totalPages, 5);
+        startPage = 1;
+    }
+    if (currentPage > totalPages - 2) {
+        startPage = Math.max(1, totalPages - 4);
+        endPage = totalPages;
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+                    <a class="${pageLinkClass}" href="#" data-page="${i}">${i}</a>
+                 </li>`;
+    }
+
+    // Botão Próximo
+    html += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                <a class="${pageLinkClass}" href="#" data-page="${currentPage + 1}" aria-label="Next">&raquo;</a>
+             </li>`;
+
+    html += '</ul>';
+    container.innerHTML = html;
+
+    // ANEXA OS LISTENERS: Precisamos fazer isso após o innerHTML
+    container.querySelectorAll('.reply-page-link').forEach(link => {
+        link.addEventListener('click', handleReplyPaginationClick);
+    });
+}
+
+/**
+ * Renderiza APENAS os replies da página atual (com base no postViewState).
+ */
+function renderCurrentReplyPage() {
+    const container = document.getElementById('post-replies-container');
+    if (!container) return;
+
+    const { allReplies, contentMap, currentReplyPage, avatar } = postViewState;
+    const user = auth.getCurrentUser();
+
+    if (allReplies.length === 0) {
+        container.innerHTML = '<p>No replies yet.</p>';
+        return;
+    }
+
+    // 1. Fatiar (Slice) o array para a página atual
+    const startIndex = (currentReplyPage - 1) * REPLIES_PER_PAGE;
+    const endIndex = startIndex + REPLIES_PER_PAGE;
+    const repliesForPage = allReplies.slice(startIndex, endIndex);
+
+    // 2. Reutiliza sua lógica de loop original, mas apenas com `repliesForPage`
+    let html = '<div class="list-group">';
+    repliesForPage.forEach(reply => {
+        let replyAvatarUrl;
+        if(avatar[reply.author] !== reply.author) {
+            replyAvatarUrl = blockchain.getAvatarUrl(reply.author);
+            postViewState.avatar[reply.author] = replyAvatarUrl; // Cacheia o avatar
+        } else{
+            console.log('Avatar do autor:', avatar[reply.author]);
+            replyAvatarUrl = postViewState.avatar[reply.author];
+        }
+        let quoteHtml = '';
+        const parentKey = `@${reply.parent_author}/${reply.parent_permlink}`;
+        const parent = contentMap[parentKey]; // Busca o pai no mapa
+        if (parent) {
+            const parentBody = parent.body.substring(0, 100) + (parent.body.length > 100 ? '...' : '');
+            quoteHtml = `<blockquote class="blockquote-footer bg-light p-2 rounded-top"><a href="#${parentKey}">@${reply.parent_author}</a> wrote:<p class="mb-0 fst-italic">${parentBody}</p></blockquote>`;
+        }
+
+        html += `
+            <div id="${parentKey}" class="list-group-item mt-3">
+                <div class="row">
+                    <div class="col-md-3 text-center border-end">
+                        <a href="?profile=${reply.author}"><img src="${replyAvatarUrl}" alt="${reply.author}" class="rounded-circle mb-2" width="40" height="40"><h6 class="mb-0">@${reply.author}</h6></a>
+                        ${getRoleBadge(reply.author)}
+                        <small class="text-muted d-block mt-2">${formatLocalTime(reply.created)}</small>
+                    </div>
+                    <div class="col-md-9">
+                        ${quoteHtml}
+                        <div class="mb-2 card-text main-post-text">${renderMarkdown(reply.body)}</div>
+                        <div class="d-flex align-items-center justify-content-between mt-2">
+                            <div class="d-flex align-items-center vote-section" data-author="${reply.author}" data-permlink="${reply.permlink}"></div>
+                            <div>
+                                ${user ? `<button class="btn btn-sm btn-link text-secondary reply-to-btn" data-author="${reply.author}" data-permlink="${reply.permlink}">Reply</button>` : ''}
+                                ${user === reply.author ? `<a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary">Edit</a><button class="btn btn-sm btn-link text-danger delete-reply-btn" data-permlink="${reply.permlink}">Delete</button>` : ''}
+                            </div>
+                        </div>
+                        <div class="reply-form-container mt-3"></div>
+                    </div>
+                </div>
+            </div>`;
+    });
+    html += '</div>';
+    
+    container.innerHTML = html;
 }

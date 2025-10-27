@@ -4,6 +4,10 @@ import * as blacklist from './blacklist.js';
 import { processPostTree, escapeSelector } from './utils.js'; // Depende de utils.js
 import { handleRouteChange } from './app.js';
 
+import { 
+postViewState,
+} from './render.js';
+
 // Variáveis de estado global para o poller
 let postViewPoller = null;
 export let currentRenderVotes = null;
@@ -20,23 +24,23 @@ const appContainer = document.getElementById('app');
 export function startPostViewPoller(author, permlink, initialData = null) {
     if (postViewPoller) clearInterval(postViewPoller);
     
-    // Armazena a primeira chamada. Será usado apenas uma vez.
+    // Armazena a primeira chamada (vindo do cache ou fetch primário do renderPostView).
     let currentData = initialData; 
 
+    // 🚨 É crucial que postViewState seja acessível aqui.
+    
     const renderVotes = async () => {
         const user = auth.getCurrentUser(); 
         
-        // 1. Lógica para usar os dados iniciais na primeira chamada
         let data2;
         if (currentData) {
+            // 1. Usa os dados iniciais passados por renderPostView (cache ou fetch)
             data2 = currentData;
-            // Zera a variável para que todas as chamadas futuras façam o fetch
-            currentData = null; 
+            currentData = null; // Zera para forçar o fetch nas próximas iterações
         } else {
-            // Chamada API que será executada a cada 60s pelo setInterval
+            // 2. Chamada API que será executada a cada 60s para atualizar os votos
             data2 = await blockchain.getPostWithReplies(author, permlink);
         }
-        // FIM DA NOVA LÓGICA DE DADOS
         
         if (!data2) return;
 
@@ -51,8 +55,6 @@ export function startPostViewPoller(author, permlink, initialData = null) {
             if (!content.replies || content.replies.length === 0) return;
 
             content.replies.forEach(reply => {
-                //if (blacklist.isBlacklisted(reply.author, reply.permlink)) return; 
-
                 const key = `@${reply.author}/${reply.permlink}`;
                 contentMap[key] = reply;
                 allReplies.push(reply); 
@@ -67,6 +69,14 @@ export function startPostViewPoller(author, permlink, initialData = null) {
         // Ordena todas as réplicas por data de criação para exibição cronológica
         allReplies.sort((a, b) => new Date(a.created) - new Date(b.created));
 
+        // 🚨 ATUALIZAÇÃO ESSENCIAL: SALVA OS DADOS FRESCOS NO ESTADO GLOBAL
+        // Isso garante que a paginação (que usa o estado) tenha os votos mais frescos.
+        if (typeof postViewState !== 'undefined') {
+             postViewState.posts = data2;
+             postViewState.allReplies = allReplies;
+             postViewState.contentMap = contentMap;
+        }
+        
         // 3. Atualiza votos: Post Principal + Todas as Réplicas
         const contentToUpdate = [data2, ...allReplies];
 
@@ -74,25 +84,24 @@ export function startPostViewPoller(author, permlink, initialData = null) {
             if (!content || !content.permlink) return;
 
             const escapedPermlink = escapeSelector(content.permlink);
-
-            const escapedAuthor = escapeSelector(content.author); // Necessário se houver caracteres especiais no nome do autor
-            // Determina qual é o container correto (o principal tem um ID, as réplicas têm data-permlink)
+            const escapedAuthor = escapeSelector(content.author); 
+            
             const selector = content === data2 
                 ? '#main-post-vote-container' 
                 : `.vote-section[data-author="${escapedAuthor}"][data-permlink="${escapedPermlink}"]`;
             
             const voteContainer = document.querySelector(selector);
-            // SAIR SE NÃO ENCONTRAR O CONTAINER (O que está acontecendo)
-            if (!voteContainer) return 'deu ruimmmmmmmmm';
+            
+            // 🚨 CORREÇÃO: Apenas retorna se o contêiner não for encontrado (sem a string de erro)
+            if (!voteContainer) return; 
             
             const userVoted = user && content.active_votes.some(v => v.voter === user);
             const votersList = content.active_votes.map(v => `@${v.voter}`).join('<br>');
 
             
             const payoutDisplay = content.title 
-                ? `Pending Payout: ${content.pending_payout_value}` // Post Principal
-                : `<small>Payout: ${content.pending_payout_value}</small>`; // Réplicas
-
+                ? `Pending Payout: ${content.pending_payout_value}` 
+                : `<small>Payout: ${content.pending_payout_value}</small>`; 
 
 
             const newHtml = `
@@ -102,23 +111,20 @@ export function startPostViewPoller(author, permlink, initialData = null) {
                 </button>`;
             voteContainer.innerHTML = newHtml;
 
-            // 🚨 SUBSTITUA O BLOCO DE INICIALIZAÇÃO GLOBAL POR ESTE:
-            // 1. Encontra o novo Popover APENAS no container atual
+            // Inicialização do Popover
             const newPopoverElement = voteContainer.querySelector('[data-bs-toggle="popover"]');
             
-            // 2. Inicializa-o (garantindo que o bootstrap esteja acessível)
             if (newPopoverElement && window.bootstrap && window.bootstrap.Popover) {
                 new window.bootstrap.Popover(newPopoverElement);
             }
-
         });
         
-        // 4. Reinicializa todos os popovers após a atualização do DOM
     };
     currentRenderVotes = renderVotes;
     renderVotes();
     postViewPoller = setInterval(renderVotes, 60000);
 }
+
 /**
  * Para o poller quando o usuário sai da visualização do post.
  */
