@@ -171,3 +171,27 @@ export function extractRootLinkFromUrl(postUrl) {
 
     return null;
 }
+
+/**
+ * Formata um timestamp ISO (UTC) para a data e hora local do usuário.
+ * @param {string} isoTimestamp - O timestamp da blockchain (ex: "2025-10-26T23:05:09").
+ * @returns {string} A data e hora formatada localmente (ex: "26/10/2025 20:05").
+ */
+export function formatLocalTime(isoTimestamp) {
+    if (!isoTimestamp) return '';
+    
+    // Adiciona 'Z' para garantir que o timestamp seja tratado como UTC, 
+    // prevenindo erros de fuso horário.
+    const date = new Date(isoTimestamp + 'Z'); 
+
+    return date.toLocaleString(
+        'default', // Usa o formato de idioma padrão do navegador
+        {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        }
+    );
+}

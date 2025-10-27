@@ -15,7 +15,8 @@ import { showLoader,
         renderMarkdown,
         getAllCategories,
         createSnippet,
-        extractRootLinkFromUrl } from './utils.js'; 
+        extractRootLinkFromUrl,
+        formatLocalTime } from './utils.js'; 
 import { 
     handleVoteClick, 
     handleDeleteClick, 
@@ -143,9 +144,9 @@ export async function renderCategoryView(categoryId) {
                     </a>
                     <div class="text-start">
                         <small class="text-muted d-block">
-                            <a href="?post=@${topic.author}/${topic.permlink}#@${topic.lastPostAuthor}/${topic.lastPostPermlink}" class="text-muted topic-last-post-link">
-                                ${new Date(topic.lastPostDate).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </a>
+                        <a href="?post=@${topic.author}/${topic.permlink}#@${topic.lastPostAuthor}/${topic.lastPostPermlink}" class="text-muted topic-last-post-link">
+                            ${formatLocalTime(topic.lastPostDate)}
+                        </a>
                         </small>
                         <a href="?profile=${topic.lastPostAuthor}" class="text-break fw-bold topic-last-post-author">@${topic.lastPostAuthor}</a>
                     </div>
@@ -247,7 +248,7 @@ export async function renderPostView(author, permlink) {
                     <div class="col-md-3 text-center border-end">
                         <a href="?profile=${post.author}"><img src="${postAuthorAvatarUrl}" alt="${post.author}" class="rounded-circle mb-2" width="60" height="60"><h5 class="mb-0">@${post.author}</h5></a>
                         ${getRoleBadge(post.author)}
-                        <small class="text-muted d-block mt-2">Posted: ${new Date(post.created).toLocaleString()}</small>
+                        <small class="text-muted d-block mt-2">Posted: ${formatLocalTime(post.created)}</small>
                     </div>
                     <div class="col-md-9">
                         <h1 class="card-title">${post.title}</h1>
@@ -284,7 +285,7 @@ export async function renderPostView(author, permlink) {
                         <div class="col-md-3 text-center border-end">
                             <a href="?profile=${reply.author}"><img src="${replyAvatarUrl}" alt="${reply.author}" class="rounded-circle mb-2" width="40" height="40"><h6 class="mb-0">@${reply.author}</h6></a>
                             ${getRoleBadge(reply.author)}
-                            <small class="text-muted d-block mt-2">${new Date(reply.created).toLocaleString()}</small>
+                            <small class="text-muted d-block mt-2">${formatLocalTime(reply.created)}</small>
                         </div>
                         <div class="col-md-9">
                             ${quoteHtml}
@@ -338,39 +339,41 @@ export async function renderPostView(author, permlink) {
 // -------------------------------------------------------------------
 // 4. VISUALIZAÇÃO DE PERFIL
 // -------------------------------------------------------------------
+/**
+ * [MUDANÇAS CHAVE PARA CARREGAMENTO RÁPIDO DO PERFIL]
+ * * 1. PADRÃO SHELL RENDERING: A função agora é dividida em duas fases para evitar a tela branca:
+ * - FASE 1 (RÁPIDA): Apenas espera por `blockchain.getAccount(username)` e renderiza
+ * IMEDIATAMENTE a estrutura básica do perfil (header, abas) no appContainer.
+ * - FASE 2 (LENTA/ASSÍNCRONA): A nova função `loadProfileContent(username)` é chamada 
+ * SEM 'await', permitindo que a busca pesada (`getAllPosts`, `getAllComments`) 
+ * ocorra em segundo plano. Ela injeta o Loader e, depois, os posts/comentários.
+ * * 2. REINICIALIZAÇÃO DE ESTADO (CORREÇÃO DE BUG):
+ * - Se o 'username' for diferente do `profileState.author` anterior, o `profileState`
+ * (posts e comentários) é zerado ANTES de renderizar o HTML. Isso garante que:
+ * a) O novo perfil não mostre dados do usuário antigo.
+ * b) O Shell renderize corretamente os Loaders internos (já que os arrays estão vazios).
+ * * 3. REMOÇÃO DOS 'AWAITS' LENTOS: As chamadas `await blockchain.getAll...` foram movidas
+ * para dentro de `loadProfileContent` para não bloquear a renderização inicial.
+ */
 export async function renderProfileView(username) {
-    // 1. Limpeza e Loader
+    // 1. Limpeza e Loader Principal
     clearBreadcrumb();
     stopPostViewPoller();
-    showLoader();
-    
-    // 2. TENTAR USAR O ESTADO JÁ CARREGADO (A CHAVE PARA SPAs)
-    // Se já temos posts para este usuário, pule a busca da API.
-    let postsAlreadyLoaded = profileState.author === username && profileState.allProfilePosts.length > 0;
-    // 🚨 Adicionar checagem para comentários também
-    let commentsAlreadyLoaded = profileState.author === username && profileState.allProfileComments.length > 0;
-    // 2. Carregar dados do usuário e primeira página de posts
+    showLoader(); // Loader principal aparece rapidamente
+
+    // 2. BUSCA RÁPIDA (SOMENTE DADOS DA CONTA)
     let account = null;
-    let initialPosts = [];
-    let initialComments = []; // 🚨 Novo array de comentários
+
+    if (profileState.author !== username) {
+        profileState.allProfilePosts = [];
+        profileState.allProfileComments = [];
+        profileState.currentPostPage = 1;
+        profileState.currentCommentPage = 1;
+    }
     
     try {
+        // ESSA É A ÚNICA CHAMADA 'await' que BLOQUEIA, pois é necessária para o cabeçalho.
         account = await blockchain.getAccount(username); 
-        // 🚨 Puxa 21 posts: 20 para exibir + 1 para a paginação
-        if (!postsAlreadyLoaded) {
-             // 🚨 SÓ CHAMA A API SE NÃO TIVERMOS OS DADOS EM MEMÓRIA
-             initialPosts = await blockchain.getAllPostsByAuthor(username); 
-        } else {
-             // Se já está carregado, use o array do estado
-             initialPosts = profileState.allProfilePosts; 
-        }
-        // 🚨 CHAMA O NOVO CARREGAMENTO DE COMENTÁRIOS
-        if (!commentsAlreadyLoaded) {
-            initialComments = await blockchain.getAllCommentsByAuthor(username); 
-        } else {
-            initialComments = profileState.allProfileComments;
-        }
-
     } catch (error) {
         hideLoader();
         return renderError(`Could not load profile for @${username}. Error: ${error.message || 'Check RPC node or API call parameters.'}`);
@@ -380,40 +383,28 @@ export async function renderProfileView(username) {
         hideLoader();
         return renderNotFound();
     }
-
-    // 3. Configurar/Atualizar o estado SOMENTE se for um novo usuário ou nova busca
-    if (!postsAlreadyLoaded) {
-        profileState.author = username;
-        // Ordena por data de criação (mais recente primeiro)
-        profileState.allProfilePosts = initialPosts.sort((a, b) => new Date(b.created) - new Date(a.created)); 
-        profileState.currentPostPage = 1; // Sempre começa na página 1, se for uma nova busca.
-    }
-
-    if (!commentsAlreadyLoaded) {
-        // 🚨 Configura o estado dos comentários
-        profileState.allProfileComments = initialComments.sort((a, b) => new Date(b.created) - new Date(a.created)); 
-        profileState.currentCommentPage = 1;
-    }
     
-    // Configuração inicial da paginação
-    const postsToDisplay = initialPosts.slice(0, 20); // Exibe apenas os primeiros 20
-    
-    // 3. Preparar dados
+    // 3. Atualiza o estado básico
+    profileState.author = username;
+
+    // 4. Prepara dados para o SHELL
     const avatarUrl = blockchain.getAvatarUrl(username);
+    const jsonMetadata = JSON.parse(account.json_metadata || '{}');
+    const profile = jsonMetadata.profile || {};
     const memberSince = new Date(account.created).toLocaleDateString();
+    const voting_power = account.voting_power/100;
+    const post_count = account.post_count;
+    const blurt_power = Math.floor(parseFloat(account.vesting_shares.split(' ')[0]) * 1.13);
+    const last_vote_time = formatLocalTime(account.last_vote_time);
     
-    // 4. Breadcrumb
+    // 5. Breadcrumb
     renderBreadcrumb([
         { text: 'Home', href: '?' },
         { text: `Profile: @${username}`, href: null }
     ]);
 
-    profileState.author = username;
-        // Ordena por data de criação (mais recente primeiro)
-    profileState.allProfilePosts = initialPosts.sort((a, b) => new Date(b.created) - new Date(a.created)); 
-    profileState.currentPostPage = 1; // Sempre começa na página 1
-    
-    // 5. Montar o HTML do Perfil
+    // 6. Montar e Injetar o HTML do Perfil (O SHELL)
+    // O html não precisa mais dos dados de posts/comentários, apenas do tamanho do array no estado.
     let html = `
         <div class="row">
             <div class="col-md-3">
@@ -421,12 +412,15 @@ export async function renderProfileView(username) {
                     <div class="card-body text-center">
                         <img src="${avatarUrl}" alt="@${username}'s Avatar" class="rounded-circle mb-3" style="width: 100px; height: 100px; object-fit: cover;">
                         <h4>@${username}</h4>
-                        <p class="text-muted">Member since ${memberSince}</p>
+                        <p class="text-muted">${profile.about || ''}</p>
+                        <p class="text-muted">Last Activity ${last_vote_time}</p>
                         <hr>
                         <ul class="list-unstyled text-start small">
                             <li><strong>BLURT Balance:</strong> ${account.balance}</li>
-                            <li><strong>Blurt Power:</strong> ${account.vesting_shares.split(' ')[0]} BP</li>
-                            <li><strong>Posts:</strong> ${initialPosts.length}${initialPosts.length ? '+' : ''}</li> 
+                            <li><strong>Blurt Power:</strong> ${blurt_power} BP</li>
+                            <li><strong>Posts:</strong> ${post_count}</li> 
+                            <li><strong>Voting Power:</strong> ${voting_power}</li> 
+                            <li><strong>Member since:</strong> ${memberSince}</li>
                         </ul>
                     </div>
                 </div>
@@ -448,23 +442,16 @@ export async function renderProfileView(username) {
                     <div class="card-body">
                         <div class="tab-content" id="profileTabsContent">
                             <div class="tab-pane fade show active" id="posts-content" role="tabpanel" aria-labelledby="posts-tab">
-                               
-                                <div class="tab-content" id="profileTabsContent">
-                                        <div class="tab-pane fade show active" id="posts-content" role="tabpanel" aria-labelledby="posts-tab">
-                                            
-                                            <div id="profile-posts-content-list">  
-                                            </div>
-                                            
-                                            <div id="profile-pagination-controls" class="d-flex justify-content-center">
-                                                </div>
-                                        </div>
+                                <div id="profile-posts-content-list">  
+                                    </div>
+                                <div id="profile-pagination-controls" class="d-flex justify-content-center">
                                 </div>
                             </div>
                             <div class="tab-pane fade" id="replies-content" role="tabpanel" aria-labelledby="replies-tab">
                                 <div id="profile-comments-content-list">
                                     </div>
                                 <div id="replies-pagination-controls" class="d-flex justify-content-center">
-                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -475,27 +462,25 @@ export async function renderProfileView(username) {
 
     document.title = `@${username}'s Profile - ${CONFIG.forum_title}`;
     appContainer.innerHTML = html;
+    
+    // 7. ESCONDE O LOADER PRINCIPAL. A PÁGINA AGORA ESTÁ VISÍVEL!
     hideLoader();
 
-    renderProfilePosts();
-// 🚨 CHAMA O NOVO RENDER para a aba de comentários, mas a mantém oculta inicialmente. A função renderProfileComments() deve ser implementada para lidar com a renderização dos comentários, similar à renderProfilePosts(), mas usando o array profileState.allProfileComments e a lógica de paginação correspondente. Certifique-se de que a função renderProfileComments() seja chamada aqui para preparar os dados, mesmo que a aba de comentários não esteja ativa inicialmente.   
-    renderProfileComments();
+    // 8. CHAMA O CARREGAMENTO LENTO (NÃO USAMOS 'await' aqui!)
+    loadProfileContent(username);
 
+    // 9. Configura Listeners (Continua como estava, mas sem a dependência imediata dos dados)
     const paginationContainer = document.getElementById('profile-pagination-controls');
     if (paginationContainer) {
-        // Delegação de evento: um único listener no container para todos os botões
         paginationContainer.addEventListener('click', handlePaginationClick); 
     }
-    // 🚨 Novo Listener para a paginação dos comentários
     const commentPaginationContainer = document.getElementById('replies-pagination-controls');
     if (commentPaginationContainer) {
         commentPaginationContainer.addEventListener('click', handleCommentPaginationClick); 
     }
     
-    
     const tabEl = document.getElementById('profileTabs');
     if (tabEl && window.bootstrap && window.bootstrap.Tab) {
-        // Inicializa as abas do Bootstrap se a biblioteca estiver carregada
         new bootstrap.Tab(document.getElementById('posts-tab')).show();
     }
 }
@@ -521,8 +506,9 @@ function renderTopicsList(topics) {
         }
         
         const repliesCount = topic.children; // Número de comentários
-        const lastUpdate = new Date(topic.last_update).toLocaleString();
+        const lastUpdate = formatLocalTime(topic.last_update);
         const authorLink = `?profile=@${topic.author}`;
+
 
         html += `
             <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -1018,13 +1004,7 @@ function renderCommentList(comments) {
 
         // 🚨 3. MELHORIA NA FORMATAÇÃO DA DATA
         // Inclui dia, mês, ano e hora/minuto.
-        const createdDate = new Date(comment.created).toLocaleString('pt-BR', { 
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric', 
-            hour: '2-digit', 
-            minute: '2-digit' 
-        });
+        const createdDate = formatLocalTime(comment.created);
         
         // Link para o comentário específico (para rolar até ele no post)
         const commentLink = `${rootPostLink}#@${comment.author}/${comment.permlink}`;
@@ -1090,4 +1070,114 @@ function renderCommentList(comments) {
             </div>
         `;
     }).join('');
+}
+
+
+// render.js
+
+// ...
+
+/**
+ * Cria a estrutura HTML básica (Shell) do perfil com placeholders de conteúdo.
+ * @param {object} profileData - Os dados da conta (obtidos rapidamente).
+ */
+function createProfileShellHtml(profileData) {
+    const jsonMetadata = JSON.parse(profileData.json_metadata || '{}');
+    const profile = jsonMetadata.profile || {};
+    const about = profile.about || 'Nenhuma descrição disponível.';
+    const avatarUrl = blockchain.getAvatarUrl(profileData.name); // Assumindo que você tem getAvatarUrl
+    
+    // Use IDs específicos que a função de carregamento irá preencher
+    return `
+        <div class="profile-header mb-4 card">
+            <div class="card-body d-flex align-items-center">
+                <img src="${avatarUrl}" alt="Avatar de ${profileData.name}" class="rounded-circle me-3" style="width: 80px; height: 80px;">
+                <div>
+                    <h2>@${profileData.name}</h2>
+                    <p class="text-muted">${about}</p>
+                </div>
+            </div>
+        </div>
+
+        <ul class="nav nav-tabs" id="profileTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="posts-tab" data-bs-toggle="tab" data-bs-target="#posts-tab-pane" type="button" role="tab" aria-controls="posts-tab-pane" aria-selected="true">Posts</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="comments-tab" data-bs-toggle="tab" data-bs-target="#comments-tab-pane" type="button" role="tab" aria-controls="comments-tab-pane" aria-selected="false">Comentários</button>
+            </li>
+        </ul>
+
+        <div class="tab-content pt-3" id="profileTabsContent">
+            
+            <div class="tab-pane fade show active" id="posts-tab-pane" role="tabpanel" aria-labelledby="posts-tab">
+                <div id="profile-posts-content-list">
+                    </div>
+                <div id="profile-pagination-controls" class="mt-3"></div>
+            </div>
+            
+            <div class="tab-pane fade" id="comments-tab-pane" role="tabpanel" aria-labelledby="comments-tab">
+                <div id="profile-comments-content-list">
+                    </div>
+                <div id="profile-comments-pagination-controls" class="mt-3"></div>
+            </div>
+        </div>
+    `;
+}
+
+// render.js
+
+// render.js
+
+// ... (Mantenha as importações e variáveis de estado como profileState)
+
+/**
+ * Carrega posts e comentários de forma assíncrona (em segundo plano) e injeta no DOM.
+ * @param {string} username - O nome do usuário.
+ */
+async function loadProfileContent(username) {
+    const postsContainer = document.getElementById('profile-posts-content-list');
+    const commentsContainer = document.getElementById('profile-comments-content-list');
+    const loaderHtml = '<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2 text-muted">Carregando conteúdo...</p></div>';
+
+    // 1. Injeta os loaders imediatamente
+    if (postsContainer) postsContainer.innerHTML = loaderHtml;
+    if (commentsContainer) commentsContainer.innerHTML = loaderHtml.replace('conteúdo', 'comentários');
+
+    try {
+        // 2. Chama as funções LENTAS em paralelo
+        // Só chama a API se o estado estiver vazio (evita chamadas redundantes)
+        const loadPostsPromise = (profileState.allProfilePosts.length > 0 && profileState.author === username) 
+            ? Promise.resolve(profileState.allProfilePosts)
+            : blockchain.getAllPostsByAuthor(username);
+            
+        const loadCommentsPromise = (profileState.allProfileComments.length > 0 && profileState.author === username)
+            ? Promise.resolve(profileState.allProfileComments)
+            : blockchain.getAllCommentsByAuthor(username);
+
+        const [initialPosts, initialComments] = await Promise.all([
+            loadPostsPromise,
+            loadCommentsPromise
+        ]);
+        
+        // 3. ATUALIZA O ESTADO (Somente se não estava carregado)
+        if (profileState.author !== username || profileState.allProfilePosts.length === 0) {
+            profileState.allProfilePosts = initialPosts.sort((a, b) => new Date(b.created) - new Date(a.created)); 
+            profileState.currentPostPage = 1;
+        }
+
+        if (profileState.author !== username || profileState.allProfileComments.length === 0) {
+            profileState.allProfileComments = initialComments.sort((a, b) => new Date(b.created) - new Date(a.created)); 
+            profileState.currentCommentPage = 1;
+        }
+        
+        // 4. Renderiza e injeta o conteúdo final
+        renderProfilePosts(); 
+        renderProfileComments();
+        
+    } catch (error) {
+        console.error("Erro ao carregar conteúdo do perfil:", error);
+        if (postsContainer) postsContainer.innerHTML = '<p class="alert alert-danger">Erro ao carregar posts.</p>';
+        if (commentsContainer) commentsContainer.innerHTML = '<p class="alert alert-danger">Erro ao carregar comentários.</p>';
+    }
 }
