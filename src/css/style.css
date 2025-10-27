@@ -103,3 +103,32 @@ body {
         min-width: 280px !important; 
     }
 }
+
+.comment-meta-info {
+    /* Cor escura */
+    color: #212529 !important; 
+    /* Deixa o texto gordo */
+    font-weight: 700 !important; 
+    /* Garante alinhamento/espaçamento */
+    margin-top: 0;
+}
+
+/* 2. Estilo para os LINKS: Aumenta a especificidade e força a cor de destaque. */
+/* Usamos o seletor h5 e a classe customizada 'meta-link' para garantir a prioridade. */
+.comment-meta-info a.meta-link {
+    /* 🚨 CORREÇÃO CRÍTICA: Força uma cor azul fixa e forte (#0d6efd é o 'blue' padrão do Bootstrap) */
+    /* Se esta cor for muito escura, substitua por #17a2b8 ou #4fa3ff (azul mais claro) */
+    color: #18bc9c !important; 
+    
+    /* Remove o sublinhado */
+    text-decoration: none; 
+    
+    /* Garante que o link também seja gordo */
+    font-weight: 700 !important; 
+}
+
+/* Efeito ao passar o mouse */
+.comment-meta-info a.meta-link:hover {
+    text-decoration: underline;
+    opacity: 0.9;
+}

@@ -366,3 +366,70 @@ export async function getAllPostsByAuthor(author, batchSize = 100) {
   console.log(allPosts);
   return allPosts;
 }
+
+
+/**
+ * Busca todos os comentários feitos por um autor no Hive.
+ * 
+ * @param {string} author - Nome do autor (ex: 'meunome').
+ * @param {number} batchSize - Quantos comentários por chamada (máx: 100).
+ * @returns {Promise<Array>} Lista completa de comentários do autor.
+ */
+export async function getAllCommentsByAuthor(author, batchSize = 100) {
+  let allComments = [];
+  let startAuthor = null;
+  let startPermlink = null;
+  let keepGoing = true;
+
+  console.log(`Iniciando busca de comentários para o autor: ${author}`);
+
+  while (keepGoing) {
+    const comments = await getCommentsByAuthor(author, batchSize, startAuthor, startPermlink);
+
+    if (comments.length === 0) break;
+
+    // 🔹 Filtra só comentários do autor (às vezes vem algum post raiz, raro)
+    const onlyComments = comments.filter(
+      c => c.author === author && c.parent_author && c.parent_author.length > 0
+    );
+
+    allComments.push(...onlyComments);
+
+    const last = comments[comments.length - 1];
+    startAuthor = last.author;
+    startPermlink = last.permlink;
+
+    if (comments.length < batchSize) keepGoing = false;
+  }
+
+  return allComments;
+}
+
+/**
+ * Função auxiliar para pegar um lote de comentários.
+ */
+export async function getCommentsByAuthor(author, limit = 20, startAuthor = null, startPermlink = null) {
+  const query = {
+    start_author: author || undefined,
+    start_permlink: startPermlink || undefined,
+    limit,
+  };
+
+  return new Promise((resolve, reject) => {
+    blurt.api.getDiscussionsByComments(query, (err, result) => {
+      if (err) {
+        return reject(new Error(`Erro ao buscar comentários de ${author}: ${err.message || JSON.stringify(err)}`));
+      }
+      console.log('result aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      console.log(result);
+      // Remove duplicado se for paginação
+      if (startAuthor && result.length > 0) {
+        if (result[0].author === startAuthor && result[0].permlink === startPermlink) {
+          return resolve(result.slice(1));
+        }
+      }
+
+      resolve(result || []);
+    });
+  });
+}

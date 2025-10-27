@@ -43,7 +43,10 @@ const POSTS_PER_PAGE = 20; // Defina a quantidade de posts por página.
 let profileState = {
     author: null,
     allProfilePosts: [],
-    currentPage: 1
+    currentPostPage: 1,
+    // Para Comentários/Replies:
+    allProfileComments: [], // 🚨 Novo array para comentários
+    currentCommentPage: 1  // 🚨 Nova variável de estado para a página de comentários
 };
 
 // -------------------------------------------------------------------
@@ -344,9 +347,12 @@ export async function renderProfileView(username) {
     // 2. TENTAR USAR O ESTADO JÁ CARREGADO (A CHAVE PARA SPAs)
     // Se já temos posts para este usuário, pule a busca da API.
     let postsAlreadyLoaded = profileState.author === username && profileState.allProfilePosts.length > 0;
+    // 🚨 Adicionar checagem para comentários também
+    let commentsAlreadyLoaded = profileState.author === username && profileState.allProfileComments.length > 0;
     // 2. Carregar dados do usuário e primeira página de posts
     let account = null;
     let initialPosts = [];
+    let initialComments = []; // 🚨 Novo array de comentários
     
     try {
         account = await blockchain.getAccount(username); 
@@ -357,6 +363,12 @@ export async function renderProfileView(username) {
         } else {
              // Se já está carregado, use o array do estado
              initialPosts = profileState.allProfilePosts; 
+        }
+        // 🚨 CHAMA O NOVO CARREGAMENTO DE COMENTÁRIOS
+        if (!commentsAlreadyLoaded) {
+            initialComments = await blockchain.getAllCommentsByAuthor(username); 
+        } else {
+            initialComments = profileState.allProfileComments;
         }
 
     } catch (error) {
@@ -374,7 +386,13 @@ export async function renderProfileView(username) {
         profileState.author = username;
         // Ordena por data de criação (mais recente primeiro)
         profileState.allProfilePosts = initialPosts.sort((a, b) => new Date(b.created) - new Date(a.created)); 
-        profileState.currentPage = 1; // Sempre começa na página 1, se for uma nova busca.
+        profileState.currentPostPage = 1; // Sempre começa na página 1, se for uma nova busca.
+    }
+
+    if (!commentsAlreadyLoaded) {
+        // 🚨 Configura o estado dos comentários
+        profileState.allProfileComments = initialComments.sort((a, b) => new Date(b.created) - new Date(a.created)); 
+        profileState.currentCommentPage = 1;
     }
     
     // Configuração inicial da paginação
@@ -393,7 +411,7 @@ export async function renderProfileView(username) {
     profileState.author = username;
         // Ordena por data de criação (mais recente primeiro)
     profileState.allProfilePosts = initialPosts.sort((a, b) => new Date(b.created) - new Date(a.created)); 
-    profileState.currentPage = 1; // Sempre começa na página 1
+    profileState.currentPostPage = 1; // Sempre começa na página 1
     
     // 5. Montar o HTML do Perfil
     let html = `
@@ -422,7 +440,7 @@ export async function renderProfileView(username) {
                                 <button class="nav-link active" id="posts-tab" data-bs-toggle="tab" data-bs-target="#posts-content" type="button" role="tab" aria-controls="posts-content" aria-selected="true">Latest Posts</button>
                             </li>
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="replies-tab" data-bs-toggle="tab" data-bs-target="#replies-content" type="button" role="tab" aria-controls="replies-content" aria-selected="false">Replies (Not Implemented)</button>
+                                <button class="nav-link" id="replies-tab" data-bs-toggle="tab" data-bs-target="#replies-content" type="button" role="tab" aria-controls="replies-content" aria-selected="false">Latest Activity</button>
                             </li>
                         </ul>
                     </div>
@@ -443,7 +461,10 @@ export async function renderProfileView(username) {
                                 </div>
                             </div>
                             <div class="tab-pane fade" id="replies-content" role="tabpanel" aria-labelledby="replies-tab">
-                                <p class="text-muted">Replies functionality will be implemented soon.</p>
+                                <div id="profile-comments-content-list">
+                                    </div>
+                                <div id="replies-pagination-controls" class="d-flex justify-content-center">
+                                    </div>
                             </div>
                         </div>
                     </div>
@@ -457,11 +478,18 @@ export async function renderProfileView(username) {
     hideLoader();
 
     renderProfilePosts();
+// 🚨 CHAMA O NOVO RENDER para a aba de comentários, mas a mantém oculta inicialmente. A função renderProfileComments() deve ser implementada para lidar com a renderização dos comentários, similar à renderProfilePosts(), mas usando o array profileState.allProfileComments e a lógica de paginação correspondente. Certifique-se de que a função renderProfileComments() seja chamada aqui para preparar os dados, mesmo que a aba de comentários não esteja ativa inicialmente.   
+    renderProfileComments();
 
     const paginationContainer = document.getElementById('profile-pagination-controls');
     if (paginationContainer) {
         // Delegação de evento: um único listener no container para todos os botões
         paginationContainer.addEventListener('click', handlePaginationClick); 
+    }
+    // 🚨 Novo Listener para a paginação dos comentários
+    const commentPaginationContainer = document.getElementById('replies-pagination-controls');
+    if (commentPaginationContainer) {
+        commentPaginationContainer.addEventListener('click', handleCommentPaginationClick); 
     }
     
     
@@ -781,7 +809,7 @@ export async function renderNotFound() {
 /**
  * Gera o HTML dos controles de paginação numérica.
  */
-function renderPaginationControls(totalPosts, currentPage) {
+function renderPaginationControls(totalPosts, currentPostPage) {
     if (totalPosts === 0) return '';
 
     const totalPages = Math.ceil(totalPosts / POSTS_PER_PAGE);
@@ -793,14 +821,14 @@ function renderPaginationControls(totalPosts, currentPage) {
     `;
 
     // ... (Lógica para startPage e endPage) ...
-    let startPage = Math.max(1, currentPage - 2);
-    let endPage = Math.min(totalPages, currentPage + 2);
+    let startPage = Math.max(1, currentPostPage - 2);
+    let endPage = Math.min(totalPages, currentPostPage + 2);
 
-    if (currentPage <= 3) {
+    if (currentPostPage <= 3) {
         endPage = Math.min(totalPages, 5);
         startPage = 1;
     }
-    if (currentPage > totalPages - 2) {
+    if (currentPostPage > totalPages - 2) {
         startPage = Math.max(1, totalPages - 4);
         endPage = totalPages;
     }
@@ -808,15 +836,15 @@ function renderPaginationControls(totalPosts, currentPage) {
 
     // Botão Anterior
     html += `
-        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-            <a class="page-link page-nav-link" href="javascript:;" data-page="${currentPage - 1}">Anterior</a>
+        <li class="page-item ${currentPostPage === 1 ? 'disabled' : ''}">
+            <a class="page-link page-nav-link" href="javascript:;" data-page="${currentPostPage - 1}">Anterior</a>
         </li>
     `;
 
     // Botões Numéricos
     for (let i = startPage; i <= endPage; i++) {
         html += `
-            <li class="page-item ${i === currentPage ? 'active' : ''}">
+            <li class="page-item ${i === currentPostPage ? 'active' : ''}">
                 <a class="page-link page-nav-link" href="javascript:;" data-page="${i}">${i}</a>
             </li>
         `;
@@ -824,8 +852,8 @@ function renderPaginationControls(totalPosts, currentPage) {
 
     // Botão Próximo
     html += `
-        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-            <a class="page-link page-nav-link" href="javascript:;" data-page="${currentPage + 1}">Próximo</a>
+        <li class="page-item ${currentPostPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link page-nav-link" href="javascript:;" data-page="${currentPostPage + 1}">Próximo</a>
         </li>
     `;
 
@@ -854,7 +882,7 @@ function handlePaginationClick(e) {
     const totalPages = Math.ceil(profileState.allProfilePosts.length / POSTS_PER_PAGE);
 
     if (newPage >= 1 && newPage <= totalPages) {
-        profileState.currentPage = newPage;
+        profileState.currentPostPage = newPage;
         renderProfilePosts(); // Redesenha a página com o novo conteúdo
     }
     // Não precisa de history.pushState aqui, pois você não está mudando a URL
@@ -864,7 +892,7 @@ function handlePaginationClick(e) {
  * Renderiza os posts para a página atual e atualiza os controles de paginação.
  */
 function renderProfilePosts() {
-    const { allProfilePosts, currentPage } = profileState;
+    const { allProfilePosts, currentPostPage } = profileState;
     const postsContainer = document.getElementById('profile-posts-content-list');
     const paginationContainer = document.getElementById('profile-pagination-controls');
 
@@ -877,7 +905,7 @@ function renderProfilePosts() {
     }
 
     // 1. Calcular o fatiamento (slice) para a página atual
-    const startIndex = (currentPage - 1) * POSTS_PER_PAGE;
+    const startIndex = (currentPostPage - 1) * POSTS_PER_PAGE;
     const endIndex = startIndex + POSTS_PER_PAGE;
     const postsToDisplay = allProfilePosts.slice(startIndex, endIndex);
 
@@ -889,10 +917,177 @@ function renderProfilePosts() {
     if (paginationContainer) {
         paginationContainer.innerHTML = renderPaginationControls(
             allProfilePosts.length,
-            currentPage
+            currentPostPage
         );
     }
     
     // Rola para o topo do feed (boa UX)
     postsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// js/modules/render.js (Nova Função)
+
+/**
+ * Renderiza os comentários (Replies) para a página atual e atualiza os controles de paginação.
+ */
+function renderProfileComments() {
+    // Usamos as variáveis específicas para comentários
+    const { allProfileComments, currentCommentPage } = profileState;
+    const commentsContainer = document.getElementById('profile-comments-content-list');
+    const paginationContainer = document.getElementById('replies-pagination-controls');
+
+    if (!commentsContainer) return;
+
+    if (allProfileComments.length === 0) {
+        commentsContainer.innerHTML = '<p class="text-muted text-center">Nenhum comentário encontrado.</p>';
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
+
+    // 1. Calcular o fatiamento (slice) para a página atual
+    const totalLength = allProfileComments.length;
+    const startIndex = (currentCommentPage - 1) * POSTS_PER_PAGE;
+    const endIndex = Math.min(totalLength, startIndex + POSTS_PER_PAGE);
+    const commentsToDisplay = allProfileComments.slice(startIndex, endIndex);
+
+console.log('Total de Comentários:', allProfileComments.length);
+console.log('Página Atual:', currentCommentPage);
+console.log('Índices de Slicing:', startIndex, endIndex);
+console.log('Comentários Exibidos:', commentsToDisplay.length);
+
+
+
+    // 2. Renderizar os comentários
+    // 🚨 ATENÇÃO: Você precisará de uma função de template para comentários, 
+    // como `renderCommentList` ou `renderTopicsList` ajustada. 
+    // Assumiremos uma função genérica renderCommentList.
+    
+    // Você pode usar o renderTopicsList por enquanto se ele aceitar o formato de post/comment
+    // Se o seu renderTopicsList é o único que existe, vamos usá-lo:
+    commentsContainer.innerHTML = renderCommentList(commentsToDisplay); 
+    
+    // 3. Renderizar e anexar os controles de paginação
+    if (paginationContainer) {
+        paginationContainer.innerHTML = renderPaginationControls(
+            allProfileComments.length,
+            currentCommentPage
+        );
+    }
+    
+    // Rola para o topo do feed (boa UX)
+    commentsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+
+/**
+ * Lida com o clique nos botões de paginação DA ABA DE COMENTÁRIOS.
+ */
+function handleCommentPaginationClick(e) {
+    e.preventDefault();
+    const link = e.target.closest('.page-nav-link');
+    
+    if (!link || link.parentElement.classList.contains('disabled')) {
+        return; 
+    }
+    
+    const newPage = parseInt(link.dataset.page);
+    const totalPages = Math.ceil(profileState.allProfileComments.length / POSTS_PER_PAGE);
+
+    if (newPage >= 1 && newPage <= totalPages) {
+        profileState.currentCommentPage = newPage;
+        renderProfileComments(); // Redesenha a página com o novo conteúdo
+    }
+}
+
+function renderCommentList(comments) {
+    if (!comments || comments.length === 0) return '';
+    
+    const isDOMPurifyAvailable = typeof window.DOMPurify !== 'undefined';
+
+    return comments.map(comment => {
+        // 1. EXTRAÇÃO DO LINK E INFORMAÇÕES DO POST RAIZ
+        const rootInfo = extractRootLinkFromUrl(comment.url); 
+        const rootPostLink = rootInfo ? `?post=@${rootInfo.author}/${rootInfo.permlink}` : '#';
+        const rootTitle = comment.root_title || 'Post Original'; 
+        
+        // 2. CRIAÇÃO E SANITIZAÇÃO DO CONTEÚDO
+        const textSnippet = createSnippet(comment.body, 150);
+        const safeSnippet = isDOMPurifyAvailable 
+            ? window.DOMPurify.sanitize(textSnippet) 
+            : textSnippet;
+
+        // 🚨 3. MELHORIA NA FORMATAÇÃO DA DATA
+        // Inclui dia, mês, ano e hora/minuto.
+        const createdDate = new Date(comment.created).toLocaleString('pt-BR', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+        
+        // Link para o comentário específico (para rolar até ele no post)
+        const commentLink = `${rootPostLink}#@${comment.author}/${comment.permlink}`;
+
+        // 🚨 1. LÓGICA PARA EXTRAIR O NOME DO APP DO JSON_METADATA
+        let appName = 'App Desconhecido';
+        try {
+            const metadata = JSON.parse(comment.json_metadata);
+            if (metadata && metadata.app) {
+                // Pega a primeira parte, ex: "blurtblog/1.0" -> "blurtblog"
+                appName = metadata.app.split('/')[0];
+            }
+        } catch (e) {
+            // Ignora se o JSON for inválido
+        }
+
+        return `
+            <div class="card mb-3 comment-summary">
+                <div class="card-body">
+                    
+                    <h5 class="card-title mb-2 fw-bold text-dark comment-meta-info">
+                        
+                        <a href="?profile=${comment.author}" class="meta-link">@${comment.author}</a> 
+                        replied to 
+                        
+                        <a href="?profile=${comment.parent_author}" class="meta-link">@${comment.parent_author}</a> 
+                        on the topic 
+                        
+                        [<a href="${rootPostLink}" class="meta-link">${rootTitle}</a>] 
+                        at ${createdDate}
+
+                        <span class="text-muted me-3" title="Postado via ${appName}">
+                        via ${appName}
+                        </span>
+                    </h5>
+                    
+                    <div class="card-text mb-3">
+                        <p>${safeSnippet}</p>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        
+                        <div class="d-flex align-items-center">
+                            
+                            <span class="text-success small fw-bold me-3" title="Recompensa Pendente">
+                                <i class="bi bi-cash-stack"></i> ${comment.pending_payout_value}
+                            </span>
+                            
+                            <button class="btn btn-sm btn-outline-primary me-2 vote-btn" data-author="${comment.author}" data-permlink="${comment.permlink}" data-weight="100">
+                                <i class="bi bi-hand-thumbs-up"></i> Vote 
+                            </button>
+                            
+                            <a href="${commentLink}" class="btn btn-sm btn-outline-secondary">
+                                View Reply <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                        </div>
+                        
+                        <span class="badge bg-light text-dark">
+                            ${comment.children || 0} Replies
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
 }
