@@ -132,3 +132,37 @@ body {
     text-decoration: underline;
     opacity: 0.9;
 }
+
+@media (max-width: 767.98px) {
+    /* Força a largura total e remove margem no mobile para evitar transbordamento */
+    .topic-main-info {
+        width: 100%;
+        margin-right: 0 !important;
+    }
+    
+    /* Garante que o bloco da última postagem ocupe a largura total */
+    .topic-last-post {
+        width: 100%;
+        /* Opcional: Centraliza o texto dentro deste bloco no mobile se quiser mais alinhamento */
+        justify-content: flex-start; /* Mantenha à esquerda para ser limpo */
+    }
+
+    .topic-last-post .text-start {
+        /* Para telas muito pequenas, garante que o nome do autor não quebre */
+        max-width: calc(100% - 40px); 
+    }
+}
+
+/* Estilo para a coluna de texto da última postagem */
+.topic-last-post > .flex-column {
+    /* Impede que o bloco de texto cresça demais no desktop e empurre o título */
+    max-width: 100%; 
+    overflow: hidden; /* Garante que o texto excedente seja cortado/escondido */
+}
+
+/* Garante que o nome do autor não force o contêiner a esticar no mobile */
+.topic-last-post-author {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap; /* Impede que o nome quebre a linha, mantendo o layout limpo */
+}

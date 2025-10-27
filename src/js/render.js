@@ -143,26 +143,22 @@ export async function renderCategoryView(categoryId) {
             
             // 1. Bloco de Informação da Última Postagem (Last Post Block)
             const lastPostHtml = `
-                <div class="d-flex align-items-center topic-last-post" style="min-width: 190px;">
-                    <a href="?profile=${topic.lastPostAuthor}" class="me-2 avatar-link">
-                        <img src="${lastPostAvatarUrl}" class="rounded-circle" width="36" height="36" alt="${topic.lastPostAuthor}">
-                    </a>
+                <div class="d-flex align-items-center topic-last-post mt-2 mt-md-0" style="min-width: 190px;">
                     <div class="text-start">
                         <small class="text-muted d-block">
-                        <a href="?post=@${topic.author}/${topic.permlink}#@${topic.lastPostAuthor}/${topic.lastPostPermlink}" class="text-muted topic-last-post-link">
+                        Last reply: <a href="?post=@${topic.author}/${topic.permlink}#@${topic.lastPostAuthor}/${topic.lastPostPermlink}" class="text-muted topic-last-post-link">
                             ${formatLocalTime(topic.lastPostDate)}
                         </a>
+                        <a href="?profile=${topic.lastPostAuthor}" class="d-none d-sm-block text-break fw-bold topic-last-post-author">@${topic.lastPostAuthor}</a>
                         </small>
-                        <a href="?profile=${topic.lastPostAuthor}" class="text-break fw-bold topic-last-post-author">@${topic.lastPostAuthor}</a>
                     </div>
                 </div>`;
             
             // 2. Montagem do Tópico Completo
             topicsHtml += `
                 <li class="list-group-item list-group-item-action topic-row">
-                    <div class="d-flex w-100 align-items-center">
-                        
-                        <div class="flex-grow-1 topic-main-info me-3">
+                    <div class="d-flex flex-column flex-md-row w-100 align-items-md-center justify-content-between">
+                        <div class="flex-grow-1 topic-main-info me-md-3 text-md-start order-md-1">
                             <h5 class="mb-1 fw-bold">
                                 <a href="?post=@${topic.author}/${topic.permlink}" class="text-decoration-none">${topic.title}</a>
                             </h5>
@@ -172,12 +168,14 @@ export async function renderCategoryView(categoryId) {
                             </small>
                         </div>
                         
-                        <div class="text-center mx-4 topic-stats d-none d-sm-block" style="min-width: 80px;">
+                        <div class="text-md-center mx-md-4 topic-stats d-none d-sm-block order-md-2" style="min-width: 80px;">
                             <span class="d-block fs-5 fw-bold">${topic.children}</span>
                             <small class="text-muted">replies</small>
                         </div>
                         
-                        ${lastPostHtml}
+                        <div class="order-md-3">
+                            ${lastPostHtml}
+                        </div>
                         
                     </div>
                 </li>`;
