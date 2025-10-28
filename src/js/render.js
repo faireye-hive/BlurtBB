@@ -16,7 +16,8 @@ import { showLoader,
         getAllCategories,
         createSnippet,
         extractRootLinkFromUrl,
-        formatLocalTime } from './utils.js'; 
+        formatLocalTime,
+        renderNotificationMessage } from './utils.js'; 
 import { 
     handleVoteClick, 
     handleDeleteClick, 
@@ -1308,4 +1309,140 @@ export function renderCurrentReplyPage() {
     html += '</div>';
     
     container.innerHTML = html;
+}
+
+const NOTIFICATION_TABS = [
+    { id: 'all', title: 'Todas' },
+    { id: 'reply', title: 'Respostas' },
+    { id: 'mention', title: 'Menções' },
+    { id: 'vote', title: 'Votos' },
+    { id: 'reblurted', title: 'Reblurts' },
+    { id: 'follow', title: 'Seguidores' },
+];
+
+
+export async function renderNotificationsView() {
+    clearBreadcrumb(); 
+    const user = auth.getCurrentUser();
+    
+    if (!user) {
+        appContainer.innerHTML = `
+            <div class="container mt-5">
+                <div class="alert alert-warning text-center">
+                    Faça login para ver suas notificações.
+                </div>
+            </div>`;
+        return;
+    }
+
+    // 1. RENDERIZAÇÃO IMEDIATA DO ESQUELETO (UX INSTANTÂNEA)
+    let html = `
+        <div class="container mt-3">
+            <h2 class="mb-4">🔔 Notificações de @${user}</h2>
+            
+            <ul class="nav nav-tabs" id="notificationTabs" role="tablist">
+                ${NOTIFICATION_TABS.map((tab, index) => `
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link ${index === 0 ? 'active' : ''}" 
+                                id="${tab.id}-tab" 
+                                data-bs-toggle="tab" 
+                                data-bs-target="#${tab.id}-content" 
+                                type="button" 
+                                role="tab" 
+                                aria-controls="${tab.id}-content" 
+                                aria-selected="${index === 0 ? 'true' : 'false'}">
+                            ${tab.title} (<span id="count-${tab.id}">...</span>)
+                        </button>
+                    </li>
+                `).join('')}
+            </ul>
+
+            <div class="tab-content border border-top-0 p-3" id="notificationTabContent">
+                ${NOTIFICATION_TABS.map((tab, index) => `
+                    <div class="tab-pane fade ${index === 0 ? 'show active' : ''}" 
+                         id="${tab.id}-content" 
+                         role="tabpanel" 
+                         aria-labelledby="${tab.id}-tab">
+                        <div class="d-flex justify-content-center py-5" id="loader-${tab.id}">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                        <ul class="list-group d-none" id="list-${tab.id}"></ul>
+                    </div>
+                `).join('')}
+            </div>
+        </div>`;
+    
+    appContainer.innerHTML = html;
+    
+    // 2. BUSCA ASSÍNCRONA E PREENCHIMENTO DOS DADOS
+    // A função não precisa mais esperar a busca, o HTML já foi exibido
+    loadNotifications(user); 
+}
+
+// 🚨 NOVA FUNÇÃO PARA BUSCAR E INSERIR DADOS (Chame-a no mesmo render.js)
+async function loadNotifications(user) {
+    const allNotifications = await blockchain.getAccountNotifications(user, undefined, 100);
+    
+    // Mapa para armazenar o HTML de cada aba
+    const tabHtml = NOTIFICATION_TABS.reduce((acc, tab) => ({ ...acc, [tab.id]: [] }), {});
+    // Mapa para contar as notificações
+    const tabCounts = NOTIFICATION_TABS.reduce((acc, tab) => ({ ...acc, [tab.id]: 0 }), {});
+
+    if (!allNotifications || allNotifications.length === 0) {
+        // Se não houver notificações, atualiza todos os contadores para 0
+        NOTIFICATION_TABS.forEach(tab => {
+            document.getElementById(`count-${tab.id}`).textContent = '0';
+            document.getElementById(`loader-${tab.id}`).classList.add('d-none');
+        });
+        document.getElementById('list-all').innerHTML = '<div class="alert alert-info text-center mt-3">Você não tem novas notificações.</div>';
+        document.getElementById('list-all').classList.remove('d-none');
+        return;
+    }
+
+    allNotifications.forEach(notif => {
+        const { type, message } = renderNotificationMessage(notif, user);
+        const date = formatLocalTime(notif.date);
+        const isRead = notif.read_status === 1; 
+        
+        const listItem = `
+            <li class="list-group-item d-flex justify-content-between align-items-start ${isRead ? 'text-muted' : 'list-group-item-light'}">
+                <div class="ms-2 me-auto w-100">
+                    <div class="fw-bold">${message}</div>
+                    <small class="text-secondary">${date}</small>
+                </div>
+            </li>
+        `;
+        
+        // Adiciona a todas as abas, mas também na aba específica
+        tabHtml['all'].push(listItem);
+        tabCounts['all']++;
+
+        if (tabHtml[type]) {
+            tabHtml[type].push(listItem);
+            tabCounts[type]++;
+        } else {
+            // Caso seja um tipo desconhecido, adiciona apenas em 'all'
+            tabCounts['geral'] = (tabCounts['geral'] || 0) + 1;
+        }
+    });
+
+    // 3. INSERE O CONTEÚDO NO DOM
+    NOTIFICATION_TABS.forEach(tab => {
+        const listElement = document.getElementById(`list-${tab.id}`);
+        const loaderElement = document.getElementById(`loader-${tab.id}`);
+        const countElement = document.getElementById(`count-${tab.id}`);
+
+        if (loaderElement) loaderElement.classList.add('d-none');
+        if (listElement) {
+             // Insere o conteúdo
+            listElement.innerHTML = tabHtml[tab.id].join('');
+            listElement.classList.remove('d-none');
+        }
+        if (countElement) {
+             // Atualiza o contador
+            countElement.textContent = tabCounts[tab.id] || 0;
+        }
+    });
 }

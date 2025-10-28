@@ -2,7 +2,7 @@ import * as auth from './auth.js';
 import * as blockchain from './blockchain.js';
 import * as blacklist from './blacklist.js';
 import { processPostTree, escapeSelector } from './utils.js'; // Depende de utils.js
-import { handleRouteChange } from './app.js';
+import { handleRouteChange, loadAndDisplayNotifCount } from './app.js';
 
 import { 
 postViewState,
@@ -149,4 +149,43 @@ export function pollForEdit(author, permlink, originalLastUpdate) {
             Toastify({ text: "Edit was submitted, but it's taking a long time to confirm.", duration: 5000, backgroundColor: "orange" }).showToast();
         }
     }, interval);
+}
+
+
+let notifPoller = null;
+const NOTIF_POLL_INTERVAL = 30000; // 30 segundos
+
+/**
+ * Inicia o poller para atualizar o contador de notificações.
+ */
+export function startNotificationPoller() {
+    if (notifPoller) clearInterval(notifPoller);
+
+    const checkAndRenderNotifs = async () => {
+        const user = auth.getCurrentUser();
+        
+        if (!user) {
+            stopNotificationPoller();
+            return;
+        }
+
+        // 🚨 CHAMA A FUNÇÃO QUE JÁ É ASYNC, MANTENDO A LÓGICA DEPOIS DO LOGIN SÍNCRONA
+        loadAndDisplayNotifCount(user); 
+    };
+
+    // Chamada inicial e depois o intervalo
+    checkAndRenderNotifs();
+    notifPoller = setInterval(checkAndRenderNotifs, NOTIF_POLL_INTERVAL);
+}
+
+/**
+ * Para o poller de notificações e limpa o badge.
+ */
+export function stopNotificationPoller() {
+    if (notifPoller) {
+        clearInterval(notifPoller);
+        notifPoller = null;
+    }
+    // Também limpa o badge quando faz logout.
+    loadAndDisplayNotifCount(null); 
 }

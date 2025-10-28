@@ -11,11 +11,12 @@ import {
     renderPostView, 
     renderProfileView, 
     renderNewTopicForm, 
-    renderEditView
+    renderEditView,
+    renderNotificationsView
 
 } from './render.js';
 import { showLoader, hideLoader, getDecryptedPostingKey, processPostTree, escapeSelector, renderMarkdown,getAllCategories } from './utils.js';
-import { startPostViewPoller, stopPostViewPoller } from './poller.js';
+import { startPostViewPoller, stopPostViewPoller, startNotificationPoller, stopNotificationPoller } from './poller.js';
 
 // Get DOM elements once
 export const appContainer = document.getElementById('app');
@@ -84,12 +85,43 @@ async function handleKeychainLogin(e) {
     }
 }
 
+export async function loadAndDisplayNotifCount(user) {
+    if (!user) {
+        // Limpar o badge se o usuário não estiver logado
+        const badgeElement = document.getElementById('unread-notif-badge');
+        if (badgeElement) badgeElement.innerHTML = '';
+        return;
+    }
+    
+    const unreadCount = await blockchain.getUnreadNotificationCount(user);
+    const badgeElement = document.getElementById('unread-notif-badge');
+    const avatarBadge = document.getElementById('avatar-notif-badge');
+
+    if (!user || !avatarBadge || !badgeElement) {
+        // Limpa ambos os badges se não estiver logado ou se não forem encontrados
+        if (avatarBadge) avatarBadge.innerHTML = '';
+        if (badgeElement) badgeElement.innerHTML = '';
+        return;
+    }
+
+    if (badgeElement) {
+        if (unreadCount > 0) {
+            // Se houver não lidas, mostra o badge vermelho
+            badgeElement.innerHTML = `<span class="badge rounded-pill bg-danger ms-1">${unreadCount}</span>`;
+            avatarBadge.innerHTML = `<span class="badge rounded-pill bg-danger ms-1">${unreadCount}</span>`;
+        } else {
+            // Se não houver, limpa o badge
+            badgeElement.innerHTML = '';
+            avatarBadge.innerHTML = '';
+        }
+    }
+}
+
 /**
  * Funções auxiliares para lidar com o fluxo de Senha Mestra.
  * NOTA: O prompt() do navegador não é o ideal para UX. Recomenda-se substituí-lo
  * por um modal personalizado do Bootstrap para um visual mais profissional.
  */
-
 
 function updateAuthUI() {
     const user = auth.getCurrentUser();
@@ -111,10 +143,15 @@ function updateAuthUI() {
             <div class="dropdown text-end">
                 <a href="#" class="d-block link-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
                     <img src="${avatarUrl}" alt="${user}" width="32" height="32" class="rounded-circle">
+                    <span id="avatar-notif-badge" class="position-absolute translate-middle badge rounded-circle bg-danger p-1"></span>
                 </a>
                 <ul class="dropdown-menu text-small" aria-labelledby="dropdownUser1">
                     <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#newPostModal">New Post...</a></li>
                     <li><a class="dropdown-item" href="?profile=${user}">My Profile</a></li>
+                    <li><a class="dropdown-item" href="?notifications=true" id="notif-link">
+                        Notificações
+                        <span id="unread-notif-badge"></span>
+                    </a></li>
                     <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#configModal">Configuration</a></li>
                     <li><a class="dropdown-item" href="https://blurtwallet.com/@${user}" target="_blank">Wallet</a></li>
                     <li><hr class="dropdown-divider"></li>
@@ -122,6 +159,7 @@ function updateAuthUI() {
                     <li><a class="dropdown-item" id="logout-button">Logout</a></li>
                 </ul>
             </div>`;
+            loadAndDisplayNotifCount(user);
         
         // Adiciona listeners para Logout e Lock/Unlock
         document.getElementById('logout-button').addEventListener('click', (e) => {
@@ -252,6 +290,7 @@ export async function handleRouteChange() {
     const newTopicCategory = params.get('new_topic_in');
     const editLink = params.get('edit');
     const profileUsername = params.get('profile');
+    const showNotifications = params.get('notifications');
 
     // A lógica de renderização AINDA ESTÁ NO app.js, mas faremos a chamada do poller.
     let postData = null; // Variável para armazenar o post
@@ -281,6 +320,8 @@ export async function handleRouteChange() {
             await renderEditView(author, permlink);
         } else if (profileUsername) {
             await renderProfileView(profileUsername);
+        } else if (showNotifications === 'true') { // 🚨 ADICIONE ESTE BLOCO
+            await renderNotificationsView();
         } else {
             await renderMainView();
         }
@@ -389,8 +430,6 @@ function setupConfigModal() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-
-    blockchain.getAccountNotifications('bgo',50);
     //auth.restoreLoginState();
     auth.initAuth();
     settings.initSettings();
@@ -416,6 +455,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Se a sessão foi restaurada, atualiza a UI
     if (user) {
         updateAuthUI(user); // Sua função para atualizar o cabeçalho/botões
+        startNotificationPoller(); // 🚨 INICIA O POLLER
+    } else {
+        stopNotificationPoller(); // 🚨 GARANTE QUE ESTEJA PARADO
     }
 
     document.body.addEventListener('click', e => {
@@ -434,7 +476,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        if ((anchor.href.includes('?category=') || anchor.href.includes('?post=') || anchor.href.includes('?new_topic_in=') || anchor.href.includes('?edit=') || anchor.href.includes('?profile=') || anchor.pathname === '/')) {
+        if ((anchor.href.includes('?category=') || anchor.href.includes('?post=') || anchor.href.includes('?new_topic_in=') || anchor.href.includes('?edit=') || anchor.href.includes('?profile=') || anchor.href.includes('?notifications=') || anchor.pathname === '/')) {
             const url = new URL(anchor.href);
             if (url.origin === window.location.origin) {
                 e.preventDefault();

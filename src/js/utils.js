@@ -195,3 +195,96 @@ export function formatLocalTime(isoTimestamp) {
         }
     );
 }
+
+
+// ... (No utils.js, adicione esta função) ...
+
+/**
+ * Formata o objeto de notificação JSON em uma string HTML legível.
+ * @param {object} notif - O objeto de notificação da Blurt API.
+ * @param {string} currentUser - O usuário logado.
+ * @returns {string} Mensagem HTML formatada.
+ */
+// utils.js
+
+// ...
+
+export function renderNotificationMessage(notif, currentUser) {
+    let data;
+    let op;
+    let notifType = 'geral'; // Valor padrão para a aba
+
+    try {
+        if (!notif.json_metadata || notif.json_metadata.trim() === '') {
+            data = null; 
+        } else {
+            data = JSON.parse(notif.json_metadata);
+        }
+    } catch (e) {
+        console.warn(`Metadados de notificação inválidos (JSON.parse falhou): ${notif.json_metadata}`, e);
+        data = null;
+    }
+
+    if (data && Array.isArray(data) && data.length > 0) {
+        op = data[0];
+    } else {
+        op = notif.type; 
+    }
+    
+    // Links utilitários
+    const profileLink = (author) => `<a href="?profile=@${author}">@${author}</a>`;
+    const commentLink = (author, permlink) => `<a href="?post=@${author}/${permlink}">seu conteúdo</a>`;
+
+    let message;
+
+    switch (op) {
+        case 'reply_comment':
+            notifType = 'reply';
+            // data[1] = [parent_author, parent_permlink, author, permlink]
+            if (data && data[1] && data[1][0] === currentUser) {
+                 message = `${profileLink(data[1][2])} respondeu em ${commentLink(data[1][0], data[1][1])}.`;
+            } else {
+                 message = `${profileLink(notif.msg.split(' ')[0].replace('@',''))} fez um novo comentário. `;
+            }
+            break;
+        
+        case 'vote':
+            notifType = 'vote';
+            if (data && data[1]) {
+                 message = `${profileLink(data[1][0])} votou em ${commentLink(data[1][1], data[1][2])}.`;
+            } else {
+                 message = `Você recebeu um voto.`;
+            }
+            break;
+
+        case 'follow':
+            notifType = 'follow';
+            const follower = notif.msg ? notif.msg.split(' ')[0].replace('@','') : notif.author;
+            message = `${profileLink(follower)} começou a seguir você.`;
+            break;
+            
+        case 'mention':
+            notifType = 'mention';
+            if (data && data[1]) {
+                message = `${profileLink(data[1][0])} mencionou você em ${commentLink(data[1][0], data[1][2])}.`;
+            } else {
+                message = `Você foi mencionado em um post.`;
+            }
+            break;
+
+        case 'reblog': // Reblurted - assuming this is the operation type from bridge.account_notifications
+            notifType = 'reblurted';
+            const reblogAuthor = notif.msg ? notif.msg.split(' ')[0].replace('@','') : notif.author;
+            message = `${profileLink(reblogAuthor)} reblurtou ${commentLink(notif.author, notif.permlink)}.`;
+            break;
+            
+        default:
+            notifType = 'geral';
+            message = `Notificação: ${notif.msg || notif.type || 'Tipo desconhecido'}`;
+            break;
+            
+    }
+
+    // Retorna o tipo e a mensagem
+    return { type: notifType, message: message };
+}

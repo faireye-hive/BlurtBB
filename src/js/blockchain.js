@@ -563,12 +563,13 @@ export function prepareDeleteOperations(author, permlink) {
     return [deleteOp];
 }
 
-export async function getAccountNotifications(account, limit = 50) {
+//Query account,last_id, limit = 50 
+export async function getAccountNotifications(account,last_id = undefined, limit = 50) {
   const url = "https://rpc.blurt.world/";
   const payload = {
     jsonrpc: "2.0",
     method: "bridge.account_notifications",
-    params: { account, limit },
+    params: { account,last_id, limit },
     id: 1
   };
 
@@ -593,4 +594,44 @@ export async function getAccountNotifications(account, limit = 50) {
     console.error("Erro de conexão:", err);
     return null;
   }
+}
+
+/*export async function getUnreadNotificationCount(account) {
+    const notifications = await getAccountNotifications(account, undefined, 100);
+    const profile = await getProfile(account);
+    let unreadCount = 0;
+
+    notifications.each(notification => {
+        console.log(notification.data);
+        if(notification.data >  profile.last_vote_time){
+            unreadCount++;
+        } else{
+            return false; // Sai do loop se encontrar uma notificação lida
+        }
+
+    });
+    return unreadCount;
+}*/
+
+export async function getUnreadNotificationCount(account) {
+    // Busca um lote razoável de notificações (100) para garantir que pegamos as não lidas.
+    const notifications = await getAccountNotifications(account, undefined, 100); 
+    const profile = await getAccount(account);
+
+    if (!notifications) {
+        return 0;
+    }
+
+    let unreadCount = 0;
+
+    for (const notification of notifications) {
+        // Verifica se a notificação não foi lida
+        if (notification.date > profile.last_post) {
+            unreadCount++;
+        } else {
+            return unreadCount; 
+        }
+    }
+    
+    return unreadCount;
 }
