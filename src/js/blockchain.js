@@ -562,3 +562,35 @@ export function prepareDeleteOperations(author, permlink) {
 
     return [deleteOp];
 }
+
+export async function getAccountNotifications(account, limit = 50) {
+  const url = "https://rpc.blurt.world/";
+  const payload = {
+    jsonrpc: "2.0",
+    method: "bridge.account_notifications",
+    params: { account, limit },
+    id: 1
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("Erro RPC:", data.error);
+      return null;
+    }
+    console.log("Notifications data:");
+    console.log(data);  
+    // O resultado útil vem em data.result
+    return data.result;
+  } catch (err) {
+    console.error("Erro de conexão:", err);
+    return null;
+  }
+}

@@ -114,6 +114,7 @@ function updateAuthUI() {
                 </a>
                 <ul class="dropdown-menu text-small" aria-labelledby="dropdownUser1">
                     <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#newPostModal">New Post...</a></li>
+                    <li><a class="dropdown-item" href="?profile=${user}">My Profile</a></li>
                     <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#configModal">Configuration</a></li>
                     <li><a class="dropdown-item" href="https://blurtwallet.com/@${user}" target="_blank">Wallet</a></li>
                     <li><hr class="dropdown-divider"></li>
@@ -388,6 +389,8 @@ function setupConfigModal() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+
+    blockchain.getAccountNotifications('bgo',50);
     //auth.restoreLoginState();
     auth.initAuth();
     settings.initSettings();
