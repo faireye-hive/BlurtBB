@@ -10,7 +10,7 @@ postViewState,
 
 // Variáveis de estado global para o poller
 let postViewPoller = null;
-export let currentRenderVotes = null;
+export let currentRenderVotes = () => {}; // Exporta para uso manual
 
 // Garante que o appContainer seja definido (pode ser necessário passar como parâmetro ou importar de um UI/app.js)
 const appContainer = document.getElementById('app'); 
@@ -25,21 +25,20 @@ export function startPostViewPoller(author, permlink, initialData = null) {
     if (postViewPoller) clearInterval(postViewPoller);
     
     // Armazena a primeira chamada (vindo do cache ou fetch primário do renderPostView).
-    let currentData = initialData; 
+    let cachedData = initialData; 
 
     // 🚨 É crucial que postViewState seja acessível aqui.
     
-    const renderVotes = async () => {
+    const renderVotes = async (forceFetch = false) => {
         const user = auth.getCurrentUser(); 
         
         let data2;
-        if (currentData) {
-            // 1. Usa os dados iniciais passados por renderPostView (cache ou fetch)
-            data2 = currentData;
-            currentData = null; // Zera para forçar o fetch nas próximas iterações
-        } else {
-            // 2. Chamada API que será executada a cada 60s para atualizar os votos
+        if (!cachedData || forceFetch) {
             data2 = await blockchain.getPostWithReplies(author, permlink);
+            cachedData = data2;
+        } else {
+            data2 = cachedData;
+            cachedData = null; // Zera para forçar o fetch nas próximas iterações
         }
         
         if (!data2) return;
@@ -121,8 +120,8 @@ export function startPostViewPoller(author, permlink, initialData = null) {
         
     };
     currentRenderVotes = renderVotes;
-    renderVotes();
-    postViewPoller = setInterval(renderVotes, 60000);
+    renderVotes(false);
+    //postViewPoller = setInterval(renderVotes, 60000);
 }
 
 /**

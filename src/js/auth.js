@@ -14,6 +14,10 @@ const USERNAME_STORAGE_ID = 'blurt_user';
 
 const KEYCHAIN_AUTH_MARKER = 'KEYCHAIN_AUTH_MARKER_FOR_POSTING_KEY';
 
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos
+const UNLOCKED_KEY_STORAGE_ID = 'blurt_unlocked_key';
+const UNLOCK_TIMESTAMP_ID = 'blurt_unlock_ts';
+
 
 
 // --- Funções de Criptografia ---
@@ -61,18 +65,37 @@ export function initAuth() {
     currentUser = localStorage.getItem(USERNAME_STORAGE_ID) || sessionStorage.getItem(USERNAME_STORAGE_ID);
     encryptedKey = localStorage.getItem(ENCRYPTED_KEY_STORAGE_ID) || sessionStorage.getItem(ENCRYPTED_KEY_STORAGE_ID);
     
+    const unlockedKey = sessionStorage.getItem(UNLOCKED_KEY_STORAGE_ID);
+    const unlockTimestamp = sessionStorage.getItem(UNLOCK_TIMESTAMP_ID);
+    const now = Date.now();
+
+    console.log("Auth initialized. User:", currentUser, "Encrypted Key Present:", encryptedKey);
+
+
     // 🚨 CORREÇÃO: Restaura o estado da chave/Keychain para a memória
     if (currentUser && encryptedKey) {
         if (encryptedKey === 'blurt_posting_key_enc') {
             // Se o valor salvo for o marcador, RESTAURAMOS o estado de Keychain.
             currentUser = currentUser.toLowerCase();
             postingKey = KEYCHAIN_AUTH_MARKER;
+        } else if (unlockedKey && unlockTimestamp) {
+            if (now - parseInt(unlockTimestamp) < SESSION_TIMEOUT_MS) {
+                // A sessão está ativa! Restaura a chave para a memória
+                postingKey = unlockedKey;
+                console.log("Sessão desbloqueada automaticamente a partir do armazenamento temporário.");
+                // ⚠️ (Opcional) Atualiza o timestamp (Sliding Window)
+                // Isso estende a sessão em mais 30 minutos a cada atualização de página.
+                //sessionStorage.setItem(UNLOCK_TIMESTAMP_ID, now.toString());
+            } else {
+                // A sessão expirou. Limpa os dados temporários do sessionStorage.
+                sessionStorage.removeItem(UNLOCKED_KEY_STORAGE_ID);
+                sessionStorage.removeItem(UNLOCK_TIMESTAMP_ID);
+            }
         }
-        } else if (encryptedKey) {
-            // Sessão Chave Mestra: A chave criptografada é restaurada, mas a sessão está 'bloqueada'
-            encryptedKey = encryptedKey;
-            postingKey = null; 
-        } 
+    } else{
+        encryptedKey = encryptedKey;
+        postingKey = null;
+    }
 }
 
 /**
@@ -123,9 +146,13 @@ export async function login(username, key, masterPassword, keepLoggedIn) {
         const otherStorage = keepLoggedIn ? sessionStorage : localStorage;
         otherStorage.removeItem(USERNAME_STORAGE_ID);
         otherStorage.removeItem(ENCRYPTED_KEY_STORAGE_ID);
+        sessionStorage.removeItem(UNLOCK_TIMESTAMP_ID);
+        sessionStorage.removeItem(UNLOCKED_KEY_STORAGE_ID);
         
         storage.setItem(USERNAME_STORAGE_ID, username);
         storage.setItem(ENCRYPTED_KEY_STORAGE_ID, encrypted);
+        sessionStorage.setItem(UNLOCK_TIMESTAMP_ID, Date.now().toString());
+        sessionStorage.setItem(UNLOCKED_KEY_STORAGE_ID, key);
 
         return true;
     } catch (error) {
@@ -140,6 +167,8 @@ export async function login(username, key, masterPassword, keepLoggedIn) {
  * O usuário permanece "logado" (o nome de usuário e a chave criptografada continuam no armazenamento).
  */
 export function lockSession() {
+    sessionStorage.removeItem(UNLOCKED_KEY_STORAGE_ID);
+    sessionStorage.removeItem(UNLOCK_TIMESTAMP_ID);
     postingKey = null;
     Toastify({ text: "Sessão bloqueada. A Senha PIN será necessária para a próxima transação.", duration: 3000, backgroundColor: "orange" }).showToast();
 }
@@ -161,9 +190,13 @@ export function unlockSession(masterPassword) {
 
     if (decryptedKey) {
         postingKey = decryptedKey;
+        sessionStorage.removeItem(UNLOCK_TIMESTAMP_ID);
+        sessionStorage.removeItem(UNLOCKED_KEY_STORAGE_ID);
+        sessionStorage.setItem(UNLOCK_TIMESTAMP_ID, Date.now().toString());
+        sessionStorage.setItem(UNLOCKED_KEY_STORAGE_ID, postingKey);
         return true;
     } else {
-        throw new Error("Senha Mestra incorreta. A descriptografia falhou.");
+        throw new Error("Seu Pin está incorreta. A descriptografia falhou.");
     }
 }
 
@@ -178,6 +211,10 @@ export function logout() {
     sessionStorage.removeItem(ENCRYPTED_KEY_STORAGE_ID);
     localStorage.removeItem(USERNAME_STORAGE_ID);
     localStorage.removeItem(ENCRYPTED_KEY_STORAGE_ID);
+    sessionStorage.removeItem(UNLOCK_TIMESTAMP_ID);
+    sessionStorage.removeItem(UNLOCKED_KEY_STORAGE_ID);
+    localStorage.removeItem(UNLOCK_TIMESTAMP_ID);
+    localStorage.removeItem(UNLOCKED_KEY_STORAGE_ID);
 }
 
 /**

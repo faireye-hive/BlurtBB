@@ -9,6 +9,12 @@ import * as blockchain from './blockchain.js';
 import { currentRenderVotes, pollForEdit,startPostViewPoller } from './poller.js'; 
 // Importa utilitários necessários para submissão/erro:
 import { getDecryptedPostingKey } from './utils.js'; 
+import { 
+    postViewState, 
+    renderCurrentReplyPage, 
+    renderReplyPagination,
+    REPLIES_PER_PAGE
+} from './render.js';
 
 import { getEasyMDEInstance, setEasyMDEInstance, appContainer, handleRouteChange } from './app.js';
 
@@ -100,15 +106,22 @@ export async function handleVoteClick(e) {
         }
 
         // --- Lógica de Sucesso (Comum a ambos os métodos) ---
+
+        console.log('Sucesssoooooooooooooooooooooooooooooooooooooooo');
         
         // 🚨 CHAMA O POLLER PARA ATUALIZAR OS VOTOS
-        if (currentRenderVotes) {
-            currentRenderVotes();
-        } else {
+        setTimeout(() => {
+            if (typeof currentRenderVotes === 'function') {
+                console.log('Chamando currentRenderVotes após voto');
+                currentRenderVotes(true);
+
+            }else {
              // Caso o poller não esteja ativo, faz uma atualização rápida da UI
              voteBtn.classList.toggle('btn-success');
              voteBtn.classList.toggle('btn-outline-success');
-        }
+             console.log('Falhoooooooooooooooooooooooooooooooooooooooo');
+            }
+        }, 5000); // 5 segundos
 
         Toastify({ text: isUpvoted ? "Unvoted successfully!" : "Voted successfully!", duration: 3000, newWindow: true, gravity: "bottom", position: "left", className: isUpvoted ? "bg-warning" : "bg-success"}).showToast();
         
@@ -233,12 +246,12 @@ export async function handleReplySubmit(e, parentAuthor, parentPermlink) {
     errorDiv.classList.add('d-none');
 
     const author = auth.getCurrentUser();
-    let originalReplyCount;
+    //let originalReplyCount;
 
     try {
         // 1. Conta as respostas originais (Para o poller)
-        const { replies } = await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink);
-        originalReplyCount = replies.length;
+        //const { replies } = await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink);
+        //originalReplyCount = replies.length;
         
         if (auth.isKeychainUser()) {
             // ==========================================================
@@ -289,22 +302,60 @@ export async function handleReplySubmit(e, parentAuthor, parentPermlink) {
             setEasyMDEInstance(null);
         }
 
-        e.target.closest('#reply-form').innerHTML = '<p class="text-success">Reply submitted! Waiting for confirmation...</p>';
+        e.target.closest('#reply-form').innerHTML = '<p class="text-success">Reply submitted! Waiting for blockchain confirmation...</p>';
 
         // 3. Poller (Não precisa de modificação aqui, pois é baseado em contagem)
         let attempts = 0;
-        const maxAttempts = 15;
+        const maxAttempts = 2;
+        let originalReplyCount = postViewState.allReplies.length;
+
         const poller = setInterval(async () => {
-            attempts++;
-            const data = await blockchain.getPostAndDirectReplies(parentAuthor, parentPermlink);
-            if (data && data.replies.length > originalReplyCount) {
-                clearInterval(poller);
-                handleRouteChange(); 
-            } else if (attempts >= maxAttempts) {
-                clearInterval(poller);
-                Toastify({ text: "Reply was submitted, but it's taking a long time to appear.", duration: 5000, backgroundColor: "orange" }).showToast();
-            }
-        }, 2000);
+        attempts++;
+        
+        // A. Força o fetch de todos os replies e atualiza o postViewState global
+        // Usamos o poller de votos que já faz o getPostWithReplies e atualiza o estado
+        if (typeof currentRenderVotes === 'function') {
+            // currentRenderVotes(true) faz o fetch e atualiza postViewState.allReplies
+            await currentRenderVotes(true); 
+        } else {
+            // Se currentRenderVotes não estiver disponível, fazemos um fetch simples
+            await blockchain.getPostWithReplies(parentAuthor, parentPermlink);
+        }
+        
+        // Assumimos que a atualização do postViewState foi bem-sucedida pelo currentRenderVotes(true)
+        const { allReplies } = postViewState;
+
+        if (allReplies && allReplies.length > originalReplyCount) {
+            clearInterval(poller);
+        
+        // 1. Calcula qual é a última página (onde o novo reply estará)
+        // postViewState.allReplies agora contém o reply recém-postado
+        const totalReplies = allReplies.length; 
+        const lastPage = Math.ceil(totalReplies / REPLIES_PER_PAGE);
+
+        // 2. Atualiza o estado da página atual
+        postViewState.currentReplyPage = lastPage;
+        
+        // 3. Atualiza a URL para refletir a nova página (opcional, mas bom para histórico)
+        const newUrl = `?post=@${postViewState.author}/${postViewState.permlink}&reply_page=${lastPage}`;
+        history.pushState({}, '', newUrl);
+
+        // 4. Re-renderiza a página e os botões de paginação
+        // 🚨 Estas funções devem ser importadas do seu render.js
+        if (typeof renderCurrentReplyPage === 'function' && typeof renderReplyPagination === 'function') {
+            renderCurrentReplyPage(); // Renderiza a lista de replies na nova página
+            renderReplyPagination();  // Atualiza os botões de paginação
+            await currentRenderVotes(true); 
+        }
+        
+        // 5. Opcional: Rola suavemente para a seção de replies
+        document.getElementById('post-replies-container').scrollIntoView({ behavior: 'smooth' });
+        
+    } else if (attempts >= maxAttempts) {
+        clearInterval(poller);
+        Toastify({ text: "Reply submitted, but a temporary error prevents display. Please refresh.", duration: 8000, backgroundColor: "red" }).showToast();
+    }
+}, 7000); // Checa a cada 7 segundos
 
     } catch (error) {
         errorDiv.textContent = `Error: ${error.message}`;
@@ -312,7 +363,7 @@ export async function handleReplySubmit(e, parentAuthor, parentPermlink) {
         e.target.querySelector('button[type="submit"]').disabled = false;
     }
     
-    if (currentRenderVotes) currentRenderVotes(); 
+
 }
 
 // -------------------------------------------------------------------

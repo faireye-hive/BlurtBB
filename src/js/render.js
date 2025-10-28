@@ -38,8 +38,8 @@ function clearBreadcrumb() {
     }
 }
 
-const POSTS_PER_PAGE = 20; // Defina a quantidade de posts por página.
-const REPLIES_PER_PAGE = 20;
+export const POSTS_PER_PAGE = 20; // Defina a quantidade de posts por página.
+export const REPLIES_PER_PAGE = 20;
 
 // Estado para armazenar todos os posts de um usuário e a página atual.
 let profileState = {
@@ -1187,7 +1187,7 @@ function handleReplyPaginationClick(e) {
  * Renderiza os controles de paginação (botões 1, 2, 3...) para os REPLIES.
  * (Esta é a sua "renderPaginationControls" com outro nome)
  */
-function renderReplyPagination() {
+export function renderReplyPagination() {
     const container = document.getElementById('post-replies-pagination');
     if (!container) return;
 
@@ -1246,7 +1246,7 @@ function renderReplyPagination() {
 /**
  * Renderiza APENAS os replies da página atual (com base no postViewState).
  */
-function renderCurrentReplyPage() {
+export function renderCurrentReplyPage() {
     const container = document.getElementById('post-replies-container');
     if (!container) return;
 

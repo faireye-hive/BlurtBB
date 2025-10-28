@@ -133,7 +133,7 @@ function updateAuthUI() {
         if (isLocked) {
             document.getElementById('unlock-button').addEventListener('click', async (e) => {
                  // Usa a mesma lógica de desbloqueio dos handlers de transação
-                const masterPassword = prompt("Digite sua Senha Mestra para desbloquear a sessão:");
+                const masterPassword = prompt("Digite seu Pin para desbloquear a sessão:");
                 if (masterPassword) {
                     try {
                         auth.unlockSession(masterPassword);
@@ -174,7 +174,7 @@ async function handleLogin(e) {
     const keepLoggedIn = loginForm.keepLoggedIn.checked;
 
     if (!username || !postingKey || !masterPassword) {
-        loginError.textContent = 'Nome de usuário, chave de postagem e senha mestra são obrigatórios.';
+        loginError.textContent = 'Nome de usuário, chave de postagem e senha PIN são obrigatórios.';
         loginError.classList.remove('d-none');
         return;
     }
@@ -224,14 +224,6 @@ function pollForPost(author, permlink) {
         }
     }, interval);
 }
-
-
-
-
-
-
-
-
 
 // --- ROUTER & INITIALIZATION ---
 
@@ -302,17 +294,65 @@ export async function handleRouteChange() {
 
 // --- THEME & SETTINGS LOGIC ---
 
+const BOOTSWATCH_SRI_HASHES = {
+  'default': 'sha384-tx4idPFGmYpnBXw7kmKHKOgRuFCglU8/GvkaXkfeBFmHLxjWncMuX2RlePD4zW84',
+  'cerulean': 'sha384-XZKD+6vmC/jDnxSJw9sbhwi3L4KtubXdkrchYpRWeZrKmb0VlkbHZz1OTUGr7zLw',
+  'cosmo': 'sha384-RfV5VNj9uqyOdZbN0hFNmoq56291KK2Y4iKhoRAbcfBfjYlpasjxK6TefPjxiAiN',
+  'cyborg': 'sha384-TjNz3QHdU81tVvb78AKLqVn/eM6Sjw16yn3ILWirC0RsHbHrZvEbM+3fU5zjUCku',
+  'darkly': 'sha384-qkU2zAXgyuetMWO55YBTK4SZzn3b91PYt/YIaQDoJWr0wpkJdglBZxwVjfN5KyR1',
+  'flatly': 'sha384-vnJh4x20T5ola6czB9LJXl43BayU/Q5zYirWKXiMK76hPwB1RwJG52nFSyd34QWT',
+  'journal': 'sha384-JOdV2Qin1N69B0lGemZPN/5jPDUGmVIrCz4/dW0BaI1Gy9egMeLRkWxpb0ScoiwB',
+  'litera': 'sha384-iZmI4EFutZeeJpl4oUMvc58UsK4G2KMH5i4WFDMxvSrbrUm+xXw7pna+T0GvCjpD',
+  'lumen': 'sha384-+Q4c2cbaxRlcBeYtVxQaZtvmweRbExJSAQMd2m2XX/KQ4TBw2x4h5Ns2vDOnGk4g',
+  'lux': 'sha384-7Nje06V0OeHVWnimil06MHZcsvdqPC1OObCAY9Xzt3ST9AxEiIeKHWyRt03JWHBs',
+  'materia': 'sha384-4rWaAnDqqE1hboIQmZRLhJUMmf7ML4BbC0tasSyXuxxcoUgfn2qWT5AfVG04Of1z',
+  'minty': 'sha384-KkToBADar0jxl9GhqWIYaB4QkzCbDFIPFreXpFAL79icrRtY9FF5hNLa3fim+vUk',
+  'pulse': 'sha384-/46YingQbYpiCTg0kQJXFY+snnHNc8iN9cdoHBdHfuuGxKLEGtuWZjljeidvONjH',
+  'sandstone': 'sha384-VzN1dCPC//KhcgW+r42J6YZDR7Hl7SyEmbN8lFmLjP4Q1lrtD3MEAeq6UAeNRvgJ',
+  'simplex': 'sha384-LO/DE4w+ED82C81VOvFB6Y65vDXSZWINvuP0K8jv5OrK4yrZM1in1toXcK9tkpfu',
+  'sketchy': 'sha384-IP3pXuoK8IWAwCslyoSC/iPJShHC8uLHmakiIiHQnDzYQLsbnkd5sbR/yea4S7l4',
+  'slate': 'sha384-9j4wNFVlfRdymNXQYAR4Bfp3RA2gF24lwPFxa1ufSWSj0A/rgCGJyp/U6FonX++G',
+  'solar': 'sha384-PO4vXJyBs14SPSFMfmjPuugYmABo5V1ELqQ+/WCM32JOhoUvttJWu1uEvWp4DnG4',
+  'spacelab': 'sha384-m1PrHz17ffBgmuUD20cpi2bjh2vAJzBA/3E/GYetQYexj/kPsJnntWOTjAhOIw6J',
+  'superhero': 'sha384-+sr+Gjq5UFZs5QLhiBRp01Vrq1/GA/SLUONKN0KCBZbMv2W24fc+eJ1z6BTWxEXK',
+  'united': 'sha384-1p7hOgaoN4fMKD9rVj6ypoYEBbOycWctzi6k87EqqTP0gtUEkfZVilWorZpvuS5H',
+  'yeti': 'sha384-oiA7DUJC2BbwtFDEjKLsLBUCJIQnZn8fRotUeF8jY+rjnEpwhmgSV7OfS6VKR3wg',
+};
+
+
 const BOOTSWATCH_THEMES = ['default', 'cerulean', 'cosmo', 'cyborg', 'darkly', 'flatly', 'journal', 'litera', 'lumen', 'lux', 'materia', 'minty', 'pulse', 'sandstone', 'simplex', 'sketchy', 'slate', 'solar', 'spacelab', 'superhero', 'united', 'yeti'];
 
 function applyTheme(themeName) {
-    // ATENÇÃO: As integridades (SRI) precisam ser atualizadas se você usar este recurso!
-    // Exemplo: O hash do Flatly que você enviou estava incorreto, o correto é: sha384-X72qP6+uYwI0fU9Q28vnJh4x20T5ola6czB9LJXl43BayU/Q5zYirWKXiMK76hPwB1RwJG52nFSyd34QWT
     const themeUrl = themeName === 'default' 
         ? 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css' 
         : `https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/${themeName}/bootstrap.min.css`;
     
-    document.getElementById('theme-css').setAttribute('href', themeUrl);
-    // Para adicionar o SRI corretamente, você precisaria de um objeto de mapeamento de hash para cada tema.
+    const themeCssLink = document.getElementById('theme-css');
+    const integrityHash = BOOTSWATCH_SRI_HASHES[themeName];
+
+    // 1. Define o novo URL
+    themeCssLink.setAttribute('href', themeUrl);
+
+    console.log(`[Theme] Applying theme: ${themeName} with URL: ${themeUrl}`);
+    console.log(`[Theme] Integrity hash: ${integrityHash}`);
+
+    // 2. Lógica Condicional do SRI/Integridade
+    if (integrityHash) {
+        // Se o hash for encontrado no nosso mapa, aplicamos o SRI
+        themeCssLink.setAttribute('integrity', integrityHash);
+        themeCssLink.setAttribute('crossorigin', 'anonymous');
+    } else {
+        // Se não for encontrado, removemos os atributos para que o tema carregue
+        // (Isso é um risco de segurança que você assume ao usar um tema sem hash conhecido)
+        themeCssLink.removeAttribute('integrity');
+        themeCssLink.removeAttribute('crossorigin');
+        console.warn(`[SRI Warning] Hash not found for theme: ${themeName}. Loading without Integrity check.`);
+    }
+
+    // ⚠️ Se você removeu o 'integrity' do seu index.html, ele deve funcionar.
+    // Se o seu index.html AINDA tiver o integrity/crossorigin no <link> padrão,
+    // o navegador PODE bloquear a troca. Certifique-se de que a tag no HTML
+    // não tenha 'integrity' por padrão para que o JS a adicione/remova de forma confiável.
 }
 
 function setupConfigModal() {
