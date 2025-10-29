@@ -1,3 +1,5 @@
+import * as i18n from './i18n.js';
+
 export const CONFIG = {
     "forum_title": "BlurtBB",
     "DEFAULT_THEME": "flatly", // The default Bootswatch theme. User can override this in their settings.

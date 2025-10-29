@@ -12,13 +12,15 @@
         connect-src 'self' https: wss:;
         frame-src https://www.youtube.com https://www.facebook.com https:;
     ">
-    <title>BlurtBB Forum</title>
+    <title data-i18n="forumTitle">BlurtBB Forum</title>
 
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://cdnjs.cloudflare.com">
     <link rel="preconnect" href="https://unpkg.com">
 
-    <link id="theme-css" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/flatly/bootstrap.min.css" as="style">
+    <link rel="preload" href="src/css/style.css" as="style">
+
     <link 
         href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/flatly/bootstrap.min.css" 
         rel="stylesheet" 
@@ -30,7 +32,7 @@
     <link rel="stylesheet" href="src/css/style.css">
 </head>
 <body>
-    <a class="visually-hidden-focusable" href="#app">Pular para o conteúdo</a>
+    <a class="visually-hidden-focusable" data-i18n="skipToContent" href="#app">Pular para o conteúdo</a>
 
     <div id="loader-overlay" class="d-none">
         <div class="spinner-border text-primary" role="status">
@@ -114,7 +116,7 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="newPostModalLabel">Choose a Category</h5>
+                    <h5 class="modal-title" id="newPostModalLabel" data-i18n="ChooseACategory">Choose a Category</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -143,9 +145,9 @@
                             <label class="form-check-label" for="use-coal">Use COAL blacklist</label>
                         </div>
                         <div class="mb-3">
-                            <label for="theme-selector" class="form-label">Theme (from Bootswatch)</label>
-                            <select class="form-select" id="theme-selector">
-                                </select>
+                            <label for="language-selector" class="form-label" data-i18n="language">Idioma</label>
+                            <select class="form-select" id="language-selector">
+                            </select>
                         </div>
                     </form>
                 </div>
@@ -164,8 +166,8 @@
         <h5 class="modal-title" id="deleteConfirmModalLabel">Confirmar Exclusão</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        Você tem certeza que deseja **deletar** este conteúdo? Esta ação é irreversível.
+      <div class="modal-body" >
+        <span data-i18n="deleteConfirmationBody">Você tem certeza que deseja **deletar** este conteúdo? Esta ação é irreversível.</span>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -176,12 +178,9 @@
 </div>
 
     <script defer type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js" integrity="sha384-1ypXlohFqSnDLddhnZiShX//tfF/8DnI48Om/a4duN13pHb1ptyRaxBONqaAb61d" crossorigin="anonymous"></script>
-
     <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-
+    <script async src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha384-mgWScxWVKP8F7PBbpNp7i/aSb17kN0LcifBpahAplF3Mn0GR4/u1oMpWIm2rD8yY" crossorigin="anonymous"></script>
+    <script async src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js" integrity="sha384-cwS6YdhLI7XS60eoDiC+egV0qHp8zI+Cms46R0nbn8JrmoAzV9uFL60etMZhAnSu" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/@blurtfoundation/blurtjs@latest/dist/blurt.min.js" integrity="sha384-zAI8cEC42mrdg7eYmWIBrq/4dlEyQs0KgbXbI20wQo91MENslp5+bkSBGJynlR1t" crossorigin="anonymous"></script>
     <script defer src="https://unpkg.com/easymde/dist/easymde.min.js" integrity="sha384-YDXeUfPZ4SP6vJpnF+ZMmf4B1bax6yd4Q/aNbkvLidRD843hPG5RE67M0IYT4LOq" crossorigin="anonymous"></script>
     <script type="module" src="src/js/app.js"></script>

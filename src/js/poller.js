@@ -3,6 +3,7 @@ import * as blockchain from './blockchain.js';
 import * as blacklist from './blacklist.js';
 import { processPostTree, escapeSelector } from './utils.js'; // Depende de utils.js
 import { handleRouteChange, loadAndDisplayNotifCount } from './app.js';
+import * as i18n from './i18n.js';
 
 import { 
 postViewState,
@@ -99,13 +100,13 @@ export function startPostViewPoller(author, permlink, initialData = null) {
 
             
             const payoutDisplay = content.title 
-                ? `Pending Payout: ${content.pending_payout_value}` 
-                : `<small>Payout: ${content.pending_payout_value}</small>`; 
+                ? `${i18n.translate('Pending Payout')}: ${content.pending_payout_value}` 
+                : `<small>${i18n.translate('Payout')}: ${content.pending_payout_value}</small>`; 
 
 
             const newHtml = `
-            ${user ? `<button class="btn btn-sm ${userVoted ? 'btn-success' : 'btn-outline-success'} me-2 vote-btn" data-author="${content.author}" data-permlink="${content.permlink}"><i class="fas fa-thumbs-up"></i> <span>${userVoted ? 'Unvote' : 'Upvote'}</span></button>` : ''}
-                <button type="button" class="btn btn-link text-muted text-decoration-none p-0 vote-popover" data-bs-toggle="popover" data-bs-html="true" title="${content.active_votes.length} Voters" data-bs-content="${votersList || 'No votes yet.'}">
+            ${user ? `<button class="btn btn-sm ${userVoted ? 'btn-success' : 'btn-outline-success'} me-2 vote-btn" data-author="${content.author}" data-permlink="${content.permlink}"><i class="fas fa-thumbs-up"></i> <span> ${userVoted ? i18n.translate('Unvote') : i18n.translate('Upvote')}</span></button>` : ''}
+                <button type="button" class="btn btn-link text-muted text-decoration-none p-0 vote-popover" data-bs-toggle="popover" data-bs-html="true" title="${content.active_votes.length} ${i18n.translate('Voters')}" data-bs-content="${votersList || i18n.translate("No votes yet")}">
                     ${payoutDisplay}
                 </button>`;
             voteContainer.innerHTML = newHtml;

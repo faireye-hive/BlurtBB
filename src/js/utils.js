@@ -1,6 +1,7 @@
 import * as auth from './auth.js';
 import * as blacklist from './blacklist.js';
 import {CONFIG} from './config.js'; 
+import * as i18n from './i18n.js';
 
 // Mova getDecryptedPostingKey() para cá, exportando-a
 
@@ -113,7 +114,9 @@ export function renderMarkdown(text) {
 }
 
 export function getAllCategories() {
-    return CONFIG.category_groups.flatMap(group => group.categories);
+    const config = getCONFIG();
+
+    return config.category_groups.flatMap(group => group.categories);
 }
 
 // Função auxiliar para criar um snippet de texto limpo
@@ -244,7 +247,7 @@ export function renderNotificationMessage(notif, currentUser) {
             if (data && data[1] && data[1][0] === currentUser) {
                  message = `${profileLink(data[1][2])} respondeu em ${commentLink(data[1][0], data[1][1])}.`;
             } else {
-                 message = `${profileLink(notif.msg.split(' ')[0].replace('@',''))} fez um novo comentário. `;
+                 message = `${profileLink(notif.msg.split(' ')[0].replace('@',''))} respondeu seu comentario. `;
             }
             break;
         
@@ -287,4 +290,51 @@ export function renderNotificationMessage(notif, currentUser) {
 
     // Retorna o tipo e a mensagem
     return { type: notifType, message: message };
+}
+
+export function getCONFIG() {
+// 🚨 CORREÇÃO 1: Inicialize como um OBJETO
+    const CONFIES = {}; 
+    
+    // Copia os campos brutos
+    CONFIES.forum_title = i18n.translate(CONFIG.forum_title, CONFIG.forum_title); // Não traduzido
+    CONFIES.DEFAULT_THEME = CONFIG.DEFAULT_THEME;
+    CONFIES.main_tag = CONFIG.main_tag;
+    CONFIES.tag_prefix = CONFIG.tag_prefix;
+    CONFIES.admins = CONFIG.admins;
+    CONFIES.moderators = CONFIG.moderators;
+    
+    // 🚨 CORREÇÃO 2: Inicializa category_groups como um array vazio para receber a nova estrutura
+    CONFIES.category_groups = []; 
+
+    
+    // Itera sobre a estrutura original CONFIG para reconstruir e traduzir
+    CONFIG.category_groups.forEach(group => {
+        
+        const translatedGroupTitle = i18n.translate(group.group_title, group.group_title);
+        
+        const translatedGroup = {
+            // Cria um novo objeto de grupo (Object { group_title: "Boas Vindas", categories: [...] })
+            group_title: translatedGroupTitle,
+            categories: [] // Inicializa a lista de categorias para este grupo
+        };
+
+        group.categories.forEach(cat => {
+            
+            const translatedCat = {
+                id: cat.id,
+                count: cat.count,
+                // A string literal é a CHAVE e o FALLBACK
+                title: i18n.translate(cat.title, cat.title), 
+                description: i18n.translate(cat.description, cat.description),
+            };
+            
+            // Adiciona a categoria traduzida ao seu respectivo grupo
+            translatedGroup.categories.push(translatedCat);
+        });
+
+        // Adiciona o grupo traduzido à lista principal de category_groups
+        CONFIES.category_groups.push(translatedGroup);
+    });
+    return CONFIES;
 }

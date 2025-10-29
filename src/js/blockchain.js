@@ -621,12 +621,13 @@ export async function getUnreadNotificationCount(account) {
     if (!notifications) {
         return 0;
     }
+    console.log(notifications.type);
 
     let unreadCount = 0;
 
     for (const notification of notifications) {
         // Verifica se a notificação não foi lida
-        if (notification.date > profile.last_post) {
+        if (notification.date > profile.last_post && notification.type !== 'vote') {
             unreadCount++;
         } else {
             return unreadCount; 

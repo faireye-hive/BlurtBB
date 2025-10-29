@@ -1,4 +1,5 @@
 import { CONFIG } from './config.js';
+import * as i18n from './i18n.js';
 import * as blockchain from './blockchain.js';
 import * as auth from './auth.js';
 import * as blacklist from './blacklist.js';
@@ -85,6 +86,32 @@ async function handleKeychainLogin(e) {
     }
 }
 
+/**
+ * Traduz o HTML estático usando o atributo data-i18n.
+ */
+
+function translateStaticContent() {
+    // Traduz o título da página
+    const titleElement = document.querySelector('title');
+    if (titleElement) {
+        titleElement.textContent = i18n.translate('forumTitle');
+    }
+    
+    // Percorre todos os elementos com o atributo data-i18n
+    document.querySelectorAll('[data-i18n]').forEach(element => {
+        const key = element.getAttribute('data-i18n');
+        const translation = i18n.translate(key);
+        
+        // Use textContent para segurança, mas se precisar de HTML, use innerHTML (com DOMPurify)
+        if (key === 'deleteConfirmationBody') { 
+            // Exemplo de uso de HTML (CUIDADO: já é pré-sanitizado por você)
+            element.innerHTML = translation; 
+        } else {
+            element.textContent = translation;
+        }
+    });
+}
+
 export async function loadAndDisplayNotifCount(user) {
     if (!user) {
         // Limpar o badge se o usuário não estiver logado
@@ -133,10 +160,10 @@ function updateAuthUI() {
 
         if (isLocked) {
              // Se a chave estiver bloqueada, o botão no dropdown é "Unlock"
-            actionButton = `<li><a class="dropdown-item" id="unlock-button">Unlock Session</a></li>`;
+            actionButton = `<li><a class="dropdown-item" id="unlock-button">${i18n.translate('unlockSession')}</a></li>`;
         } else {
             // Se estiver desbloqueada (chave na memória), o botão é "Lock"
-            actionButton = `<li><a class="dropdown-item" id="lock-button">Lock Session</a></li>`;
+            actionButton = `<li><a class="dropdown-item" id="lock-button">${i18n.translate('lockSession')}</a></li>`;
         }
 
         authContainer.innerHTML = `
@@ -146,17 +173,17 @@ function updateAuthUI() {
                     <span id="avatar-notif-badge" class="position-absolute translate-middle badge rounded-circle bg-danger p-1"></span>
                 </a>
                 <ul class="dropdown-menu text-small" aria-labelledby="dropdownUser1">
-                    <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#newPostModal">New Post...</a></li>
-                    <li><a class="dropdown-item" href="?profile=${user}">My Profile</a></li>
+                    <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#newPostModal">${i18n.translate('newPost')}</a></li>
+                    <li><a class="dropdown-item" href="?profile=${user}">${i18n.translate('myProfile')}</a></li>
                     <li><a class="dropdown-item" href="?notifications=true" id="notif-link">
-                        Notificações
+                        ${i18n.translate('notifications')}
                         <span id="unread-notif-badge"></span>
                     </a></li>
-                    <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#configModal">Configuration</a></li>
-                    <li><a class="dropdown-item" href="https://blurtwallet.com/@${user}" target="_blank">Wallet</a></li>
+                    <li><a class="dropdown-item" data-bs-toggle="modal" data-bs-target="#configModal">${i18n.translate('configuration')}</a></li>
+                    <li><a class="dropdown-item" href="https://blurtwallet.com/@${user}" target="_blank">${i18n.translate('wallet')}</a></li>
                     <li><hr class="dropdown-divider"></li>
                     ${actionButton}
-                    <li><a class="dropdown-item" id="logout-button">Logout</a></li>
+                    <li><a class="dropdown-item" id="logout-button">${i18n.translate('logout')}</a></li>
                 </ul>
             </div>`;
             loadAndDisplayNotifCount(user);
@@ -234,16 +261,7 @@ async function handleLogin(e) {
     }
 }
 
-// OS HANDLERS ABAIXO FORAM ATUALIZADOS PARA USAR O NOVO getDecryptedPostingKey()
-
-
-
-// ... (Restante do app.js permanece o mesmo, exceto pelo uso do novo getDecryptedPostingKey)
-// O restante do app.js é mantido por brevidade na resposta, mas as chamadas
 // aos handlers de transação foram alteradas.
-
-
-
 
 function pollForPost(author, permlink) {
     let attempts = 0;
@@ -266,13 +284,9 @@ function pollForPost(author, permlink) {
 
 // --- ROUTER & INITIALIZATION ---
 
-// js/app.js
-
-// Torne a função assíncrona para usar o loader (se você ainda não o fez)
 export async function handleRouteChange() { 
     
     // 1. CHAMA O MÓDULO PARA PARAR O POLLER
-    // Substitui todo o bloco de clearInterval/postViewPoller/currentRenderVotes
     stopPostViewPoller(); 
 
     if (easyMDEInstance) {
@@ -334,95 +348,56 @@ export async function handleRouteChange() {
     }
 }
 
-// --- THEME & SETTINGS LOGIC ---
-
-const BOOTSWATCH_SRI_HASHES = {
-  'default': 'sha384-tx4idPFGmYpnBXw7kmKHKOgRuFCglU8/GvkaXkfeBFmHLxjWncMuX2RlePD4zW84',
-  'cerulean': 'sha384-XZKD+6vmC/jDnxSJw9sbhwi3L4KtubXdkrchYpRWeZrKmb0VlkbHZz1OTUGr7zLw',
-  'cosmo': 'sha384-RfV5VNj9uqyOdZbN0hFNmoq56291KK2Y4iKhoRAbcfBfjYlpasjxK6TefPjxiAiN',
-  'cyborg': 'sha384-TjNz3QHdU81tVvb78AKLqVn/eM6Sjw16yn3ILWirC0RsHbHrZvEbM+3fU5zjUCku',
-  'darkly': 'sha384-qkU2zAXgyuetMWO55YBTK4SZzn3b91PYt/YIaQDoJWr0wpkJdglBZxwVjfN5KyR1',
-  'flatly': 'sha384-vnJh4x20T5ola6czB9LJXl43BayU/Q5zYirWKXiMK76hPwB1RwJG52nFSyd34QWT',
-  'journal': 'sha384-JOdV2Qin1N69B0lGemZPN/5jPDUGmVIrCz4/dW0BaI1Gy9egMeLRkWxpb0ScoiwB',
-  'litera': 'sha384-iZmI4EFutZeeJpl4oUMvc58UsK4G2KMH5i4WFDMxvSrbrUm+xXw7pna+T0GvCjpD',
-  'lumen': 'sha384-+Q4c2cbaxRlcBeYtVxQaZtvmweRbExJSAQMd2m2XX/KQ4TBw2x4h5Ns2vDOnGk4g',
-  'lux': 'sha384-7Nje06V0OeHVWnimil06MHZcsvdqPC1OObCAY9Xzt3ST9AxEiIeKHWyRt03JWHBs',
-  'materia': 'sha384-4rWaAnDqqE1hboIQmZRLhJUMmf7ML4BbC0tasSyXuxxcoUgfn2qWT5AfVG04Of1z',
-  'minty': 'sha384-KkToBADar0jxl9GhqWIYaB4QkzCbDFIPFreXpFAL79icrRtY9FF5hNLa3fim+vUk',
-  'pulse': 'sha384-/46YingQbYpiCTg0kQJXFY+snnHNc8iN9cdoHBdHfuuGxKLEGtuWZjljeidvONjH',
-  'sandstone': 'sha384-VzN1dCPC//KhcgW+r42J6YZDR7Hl7SyEmbN8lFmLjP4Q1lrtD3MEAeq6UAeNRvgJ',
-  'simplex': 'sha384-LO/DE4w+ED82C81VOvFB6Y65vDXSZWINvuP0K8jv5OrK4yrZM1in1toXcK9tkpfu',
-  'sketchy': 'sha384-IP3pXuoK8IWAwCslyoSC/iPJShHC8uLHmakiIiHQnDzYQLsbnkd5sbR/yea4S7l4',
-  'slate': 'sha384-9j4wNFVlfRdymNXQYAR4Bfp3RA2gF24lwPFxa1ufSWSj0A/rgCGJyp/U6FonX++G',
-  'solar': 'sha384-PO4vXJyBs14SPSFMfmjPuugYmABo5V1ELqQ+/WCM32JOhoUvttJWu1uEvWp4DnG4',
-  'spacelab': 'sha384-m1PrHz17ffBgmuUD20cpi2bjh2vAJzBA/3E/GYetQYexj/kPsJnntWOTjAhOIw6J',
-  'superhero': 'sha384-+sr+Gjq5UFZs5QLhiBRp01Vrq1/GA/SLUONKN0KCBZbMv2W24fc+eJ1z6BTWxEXK',
-  'united': 'sha384-1p7hOgaoN4fMKD9rVj6ypoYEBbOycWctzi6k87EqqTP0gtUEkfZVilWorZpvuS5H',
-  'yeti': 'sha384-oiA7DUJC2BbwtFDEjKLsLBUCJIQnZn8fRotUeF8jY+rjnEpwhmgSV7OfS6VKR3wg',
-};
-
-
-const BOOTSWATCH_THEMES = ['default', 'cerulean', 'cosmo', 'cyborg', 'darkly', 'flatly', 'journal', 'litera', 'lumen', 'lux', 'materia', 'minty', 'pulse', 'sandstone', 'simplex', 'sketchy', 'slate', 'solar', 'spacelab', 'superhero', 'united', 'yeti'];
-
-function applyTheme(themeName) {
-    const themeUrl = themeName === 'default' 
-        ? 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css' 
-        : `https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/${themeName}/bootstrap.min.css`;
-    
-    const themeCssLink = document.getElementById('theme-css');
-    const integrityHash = BOOTSWATCH_SRI_HASHES[themeName];
-
-    // 1. Define o novo URL
-    themeCssLink.setAttribute('href', themeUrl);
-
-    console.log(`[Theme] Applying theme: ${themeName} with URL: ${themeUrl}`);
-    console.log(`[Theme] Integrity hash: ${integrityHash}`);
-
-    // 2. Lógica Condicional do SRI/Integridade
-    if (integrityHash) {
-        // Se o hash for encontrado no nosso mapa, aplicamos o SRI
-        themeCssLink.setAttribute('integrity', integrityHash);
-        themeCssLink.setAttribute('crossorigin', 'anonymous');
-    } else {
-        // Se não for encontrado, removemos os atributos para que o tema carregue
-        // (Isso é um risco de segurança que você assume ao usar um tema sem hash conhecido)
-        themeCssLink.removeAttribute('integrity');
-        themeCssLink.removeAttribute('crossorigin');
-        console.warn(`[SRI Warning] Hash not found for theme: ${themeName}. Loading without Integrity check.`);
-    }
-
-    // ⚠️ Se você removeu o 'integrity' do seu index.html, ele deve funcionar.
-    // Se o seu index.html AINDA tiver o integrity/crossorigin no <link> padrão,
-    // o navegador PODE bloquear a troca. Certifique-se de que a tag no HTML
-    // não tenha 'integrity' por padrão para que o JS a adicione/remova de forma confiável.
-}
-
 function setupConfigModal() {
     const rpcNodeInput = document.getElementById('rpc-node');
     const useCoalCheckbox = document.getElementById('use-coal');
-    const themeSelector = document.getElementById('theme-selector');
+    const languageSelector = document.getElementById('language-selector');
 
-    // Populate themes
-    BOOTSWATCH_THEMES.forEach(theme => {
-        const option = new Option(theme.charAt(0).toUpperCase() + theme.slice(1), theme);
-        themeSelector.add(option);
+    // 1. Popular os idiomas disponíveis
+    // Use i18n.getAvailableLanguages() e i18n.LANGUAGE_NAMES
+    i18n.getAvailableLanguages().forEach(langCode => {
+        // Usa a chave de tradução (ex: 'portuguese') para o texto de exibição
+        const displayNameKey = i18n.LANGUAGE_NAMES[langCode]; 
+        
+        // Traduz o nome para o idioma ATUAL do usuário
+        const displayName = i18n.translate(displayNameKey, langCode); 
+        
+        const option = new Option(displayName, langCode);
+        languageSelector.add(option);
     });
 
     // Load current settings into the form
     rpcNodeInput.value = settings.getSetting('RPC_URL');
     useCoalCheckbox.checked = settings.getSetting('USE_COAL');
-    themeSelector.value = settings.getSetting('THEME');
+    languageSelector.value = i18n.getCurrentLanguage();
+
+
 
     // Save handler
     document.getElementById('save-config').addEventListener('click', () => {
         const newSettings = {
             RPC_URL: rpcNodeInput.value,
-            USE_COAL: useCoalCheckbox.checked,
-            THEME: themeSelector.value
+            USE_COAL: useCoalCheckbox.checked
         };
+        
+        // --- Lógica do Idioma ---
+        const newLang = languageSelector.value;
+        const currentLang = i18n.getCurrentLanguage();
+        let shouldReload = false; // Flag para recarregar
+
+        if (newLang !== currentLang) {
+            i18n.setLanguage(newLang); // Salva o novo idioma
+            shouldReload = true;
+            // O ideal é não recarregar, mas sim re-renderizar todo o DOM (incluindo renderização dinâmica)
+            // Se você não quiser re-renderizar todo o app, o reload é a maneira mais segura.
+        }
+
+
         settings.saveSettings(newSettings);
-        applyTheme(newSettings.THEME);
-        Toastify({ text: "Settings saved! Reloading to apply all changes...", backgroundColor: "green" }).showToast();
+
+        const toastMessage = i18n.translate('settingsSaved') + '. ' + i18n.translate('reloadingToApplyChanges');
+
+        Toastify({ text: toastMessage, backgroundColor: "green" }).showToast();
         
         // Reload the page to apply RPC and blacklist settings
         setTimeout(() => window.location.reload(), 1500);
@@ -434,7 +409,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     auth.initAuth();
     settings.initSettings();
     blockchain.initBlockchain();
-    applyTheme(settings.getSetting('THEME'));
 
     await blacklist.initBlacklist();
     await beneficiaries.initBeneficiaries();
@@ -513,6 +487,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
 
-
+    translateStaticContent();
     handleRouteChange();
 });

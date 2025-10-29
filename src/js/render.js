@@ -3,7 +3,7 @@
 // =========================================================================
 
 // Importações dos módulos que a renderização necessita:
-import {CONFIG} from './config.js'; 
+//import {CONFIG} from './config.js'; 
 import * as blockchain from './blockchain.js';
 import * as auth from './auth.js';
 import * as blacklist from './blacklist.js';
@@ -17,7 +17,8 @@ import { showLoader,
         createSnippet,
         extractRootLinkFromUrl,
         formatLocalTime,
-        renderNotificationMessage } from './utils.js'; 
+        renderNotificationMessage,
+        getCONFIG } from './utils.js'; 
 import { 
     handleVoteClick, 
     handleDeleteClick, 
@@ -27,6 +28,10 @@ import {
 } from './ui.js';
 import { startPostViewPoller, stopPostViewPoller } from './poller.js';
 import { setEasyMDEInstance, getEasyMDEInstance } from './app.js';
+
+const CONFIG = getCONFIG();
+
+import * as i18n from './i18n.js';
 // Não precisa importar poller.js aqui, pois render.js não o inicia.
 
 // Variáveis DOM que a renderização pode precisar (ajuste conforme o seu código):
@@ -66,6 +71,7 @@ export const postViewState = {
 // 1. ROTA PRINCIPAL (Home)
 // -------------------------------------------------------------------
 export async function renderMainView() {
+
     document.title = CONFIG.forum_title;
     let html = `<h1>${CONFIG.forum_title}</h1>`;
     clearBreadcrumb();
@@ -147,7 +153,7 @@ export async function renderCategoryView(categoryId) {
                 <div class="d-flex align-items-center topic-last-post mt-2 mt-md-0" style="min-width: 190px;">
                     <div class="text-start">
                         <small class="text-muted d-block">
-                        Last reply: <a href="?post=@${topic.author}/${topic.permlink}#@${topic.lastPostAuthor}/${topic.lastPostPermlink}" class="text-muted topic-last-post-link">
+                        ${i18n.translate('Last reply')}: <a href="?post=@${topic.author}/${topic.permlink}#@${topic.lastPostAuthor}/${topic.lastPostPermlink}" class="text-muted topic-last-post-link">
                             ${formatLocalTime(topic.lastPostDate)}
                         </a>
                         <a href="?profile=${topic.lastPostAuthor}" class="d-none d-sm-block text-break fw-bold topic-last-post-author">@${topic.lastPostAuthor}</a>
@@ -164,14 +170,14 @@ export async function renderCategoryView(categoryId) {
                                 <a href="?post=@${topic.author}/${topic.permlink}" class="text-decoration-none">${topic.title}</a>
                             </h5>
                             <small class="text-muted">
-                                By <a href="?profile=${topic.author}">@${topic.author}</a>, 
+                                ${i18n.translate('By')} <a href="?profile=${topic.author}">@${topic.author}</a>, 
                                 <time datetime="${topic.created}">${new Date(topic.created).toLocaleDateString()}</time>
                             </small>
                         </div>
                         
                         <div class="text-md-center mx-md-4 topic-stats d-none d-sm-block order-md-2" style="min-width: 80px;">
                             <span class="d-block fs-5 fw-bold">${topic.children}</span>
-                            <small class="text-muted">replies</small>
+                            <small class="text-muted">${i18n.translate('Replies')}</small>
                         </div>
                         
                         <div class="order-md-3">
@@ -280,8 +286,8 @@ export async function renderPostView(author, permlink) {
                         <div class="d-flex align-items-center justify-content-between mt-3">
                             <div class="d-flex align-items-center vote-section" id="main-post-vote-container" data-author="${post.author}" data-permlink="${post.permlink}"></div>
                             <div>
-                                ${user ? `<button class="btn btn-sm btn-outline-primary me-2 reply-to-btn" data-author="${post.author}" data-permlink="${post.permlink}">Reply</button>` : ''}
-                                ${user === post.author ? `<a href="?edit=@${post.author}/${post.permlink}" class="btn btn-sm btn-outline-secondary me-2">Edit</a><button id="delete-post-btn" class="btn btn-sm btn-outline-danger">Delete</button>` : ''}
+                                ${user ? `<button class="btn btn-sm btn-outline-primary me-2 reply-to-btn" data-author="${post.author}" data-permlink="${post.permlink}">${i18n.translate('Reply')}</button>` : ''}
+                                ${user === post.author ? `<a href="?edit=@${post.author}/${post.permlink}" class="btn btn-sm btn-outline-secondary me-2">Edit</a><button id="delete-post-btn" class="btn btn-sm btn-outline-danger">${i18n.translate('Delete')}</button>` : ''}
                             </div>
                         </div>
                         <div class="reply-form-container mt-3"></div>
@@ -290,7 +296,7 @@ export async function renderPostView(author, permlink) {
             </div>
         </div>
         
-        <h3>Replies (${allReplies.length})</h3>
+        <h3>${i18n.translate('Replies')} (${allReplies.length})</h3>
         <div id="post-replies-container" class="mt-4"></div>
         <div id="post-replies-pagination" class="d-flex justify-content-center mt-3"></div>
         `;
@@ -506,11 +512,11 @@ function renderTopicsList(topics) {
                 <div>
                     <a href="?post=@${topic.author}/${topic.permlink}" class="fw-bold">${createSnippet(topic.title, 60)}</a>
                     <div class="text-muted small">
-                        by <a href="${authorLink}">@${topic.author}</a> 
+                        ${i18n.translate('By')} <a href="${authorLink}">@${topic.author}</a> 
                         • ${lastUpdate}
                     </div>
                 </div>
-                <span class="badge bg-primary rounded-pill">${repliesCount} Replies</span>
+                <span class="badge bg-primary rounded-pill">${repliesCount} ${i18n.translate('Replies')}</span>
             </li>
         `;
     });
@@ -682,7 +688,7 @@ export async function renderReplyForm(parentAuthor, parentPermlink, container) {
 
     const formHtml = `
         <form id="reply-form" class="mt-3 mb-3 card card-body">
-            <h4>Reply to @${parentAuthor}</h4>
+            <h4>${i18n.translate('Reply to')} @${parentAuthor}</h4>
             <div class="mb-3"><textarea class="form-control" id="reply-body" rows="5"></textarea></div>
             <div id="reply-error" class="alert alert-danger d-none"></div>
             <button type="submit" class="btn btn-primary">Submit Reply</button>
@@ -1020,7 +1026,7 @@ function renderCommentList(comments) {
                             </span>
                             
                             <button class="btn btn-sm btn-outline-primary me-2 vote-btn" data-author="${comment.author}" data-permlink="${comment.permlink}" data-weight="100">
-                                <i class="bi bi-hand-thumbs-up"></i> Vote 
+                                <i class="bi bi-hand-thumbs-up"></i> ${i18n.translate('Vote')} 
                             </button>
                             
                             <a href="${commentLink}" class="btn btn-sm btn-outline-secondary">
@@ -1029,7 +1035,7 @@ function renderCommentList(comments) {
                         </div>
                         
                         <span class="badge bg-light text-dark">
-                            ${comment.children || 0} Replies
+                            ${comment.children || 0} ${i18n.translate('Replies')}
                         </span>
                     </div>
                 </div>
@@ -1255,7 +1261,7 @@ export function renderCurrentReplyPage() {
     const user = auth.getCurrentUser();
 
     if (allReplies.length === 0) {
-        container.innerHTML = '<p>No replies yet.</p>';
+        container.innerHTML = '<p>${i18n.translate("No replies yet")}.</p>';
         return;
     }
 
@@ -1280,7 +1286,7 @@ export function renderCurrentReplyPage() {
         const parent = contentMap[parentKey]; // Busca o pai no mapa
         if (parent) {
             const parentBody = parent.body.substring(0, 100) + (parent.body.length > 100 ? '...' : '');
-            quoteHtml = `<blockquote class="blockquote-footer bg-light p-2 rounded-top"><a href="#${parentKey}">@${reply.parent_author}</a> wrote:<p class="mb-0 fst-italic">${parentBody}</p></blockquote>`;
+            quoteHtml = `<blockquote class="blockquote-footer bg-light p-2 rounded-top"><a href="#${parentKey}">@${reply.parent_author}</a> ${i18n.translate('wrote')}:<p class="mb-0 fst-italic">${parentBody}</p></blockquote>`;
         }
 
         html += `
@@ -1297,8 +1303,8 @@ export function renderCurrentReplyPage() {
                         <div class="d-flex align-items-center justify-content-between mt-2">
                             <div class="d-flex align-items-center vote-section" data-author="${reply.author}" data-permlink="${reply.permlink}"></div>
                             <div>
-                                ${user ? `<button class="btn btn-sm btn-link text-secondary reply-to-btn" data-author="${reply.author}" data-permlink="${reply.permlink}">Reply</button>` : ''}
-                                ${user === reply.author ? `<a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary">Edit</a><button class="btn btn-sm btn-link text-danger delete-reply-btn" data-permlink="${reply.permlink}">Delete</button>` : ''}
+                                ${user ? `<button class="btn btn-sm btn-link text-secondary reply-to-btn" data-author="${reply.author}" data-permlink="${reply.permlink}">${i18n.translate('Reply')}</button>` : ''}
+                                ${user === reply.author ? `<a href="?edit=@${reply.author}/${reply.permlink}" class="btn btn-sm btn-link text-secondary">${i18n.translate('Edit')}</a><button class="btn btn-sm btn-link text-danger delete-reply-btn" data-permlink="${reply.permlink}">${i18n.translate('Delete')}</button>` : ''}
                             </div>
                         </div>
                         <div class="reply-form-container mt-3"></div>
@@ -1414,10 +1420,13 @@ async function loadNotifications(user) {
                 </div>
             </li>
         `;
-        
-        // Adiciona a todas as abas, mas também na aba específica
-        tabHtml['all'].push(listItem);
-        tabCounts['all']++;
+        // Filtro da aba 'all' para não incluir votos
+        if(notif.type != 'vote'){
+            // Adiciona a todas as abas, mas também na aba específica
+            tabHtml['all'].push(listItem);
+            tabCounts['all']++;
+
+        }
 
         if (tabHtml[type]) {
             tabHtml[type].push(listItem);
