@@ -21,13 +21,13 @@ export const CONFIG = {
                     "id": "introductions",
                     "title": "Introductions",
                     "description": "Say hello and introduce yourself to the community.",
-                    "count": 1 // This will be updated dynamically based on the number of posts in this category
+                    "count": 2 // This will be updated dynamically based on the number of posts in this category
                 },
                 {
                     "id": "support",
                     "title": "Help & Support",
                     "description": "Get help with using the forum or Blurt.",
-                    "count": 1 // This will be updated dynamically based on the number of posts in this category
+                    "count": 2 // This will be updated dynamically based on the number of posts in this category
                 }
             ]
         },
@@ -45,12 +45,6 @@ export const CONFIG = {
                     "title": "Development & DApps",
                     "description": "Discuss technical details, development, and applications on Blurt.",
                     "count": 0 // This will be updated dynamically based on the number of posts in this category
-                },
-                {
-                    "id": "trading",
-                    "title": "Trading & Markets",
-                    "description": "Price, markets, and speculation.",
-                    "count": 0 // This will be updated dynamically based on the number of posts in this category
                 }
             ]
         },
@@ -64,11 +58,64 @@ export const CONFIG = {
                     "count": 0 // This will be updated dynamically based on the number of posts in this category
                 },
                 {
+                    "id": "contests",
+                    "title": "Contests",
+                    "description": "Share Contests",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
+                },
+                {
+                    "id": "promotion",
+                    "title": "Post Promotion",
+                    "description": "Share your Post here",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
+                },
+            ]
+        },
+        {
+            "group_title": "Off Topic",
+            "categories": [
+                {
                     "id": "off-topic",
                     "title": "Off-Topic",
                     "description": "For everything else.",
                     "count": 3 // This will be updated dynamically based on the number of posts in this category
-                }
+                },
+                {
+                    "id": "ai",
+                    "title": "About AI, Machine Learn, ChatGPT, Gemini...",
+                    "description": "Share your last discovery",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
+                },
+                {
+                    "id": "conspirations",
+                    "title": "Share Conspirations",
+                    "description": "Share your theory.",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
+                },          
+            ]
+        }
+        ,
+        {
+            "group_title": "Crypto",
+            "categories": [ 
+                {
+                    "id": "news",
+                    "title": "Crypto News",
+                    "description": "News about crypto",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
+                },
+                {
+                    "id": "faucets",
+                    "title": "Faucets",
+                    "description": "Share Crypto faucets here",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
+                },
+                {
+                    "id": "trading",
+                    "title": "Trading & Markets",
+                    "description": "Price, markets, and speculation.",
+                    "count": 0 // This will be updated dynamically based on the number of posts in this category
+                }        
             ]
         }
     ]
